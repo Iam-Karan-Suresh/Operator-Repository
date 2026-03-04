@@ -87,6 +87,12 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	// Create watcher for webhook certificates
+	// webhookCertWatcher is a pointer to a CertWatcher, which can be used to watch for changes
+	// in webhook TLS certificates and reload them automatically. This is useful for supporting
+	// certificate rotation without restarting the manager. If not used, it remains nil.
+	var webhookCertWatcher *certwatcher.CertWatcher
+
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
 	// prevent from being vulnerable to the HTTP/2 Stream Cancellation and
@@ -186,7 +192,14 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
-
+	if webhookCertWatcher != nil {
+		setupLog.Info("Adding webhook certificate watcher to manager")
+		if err := mgr.Add(webhookCertWatcher); err != nil {
+			setupLog.Error(err, "unable to add webhook certificate watcher")
+			os.Exit(1)
+		}
+	}
+	
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
