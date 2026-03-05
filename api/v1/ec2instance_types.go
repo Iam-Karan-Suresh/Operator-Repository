@@ -33,12 +33,18 @@ type EC2InstanceSpec struct {
 
 	// foo is an example field of EC2Instance. Edit ec2instance_types.go to remove/update
 	// +optional
-	Foo 	 string 	`json:"foo,omitempty"`
-	AmiID	 string 	`json:"amiID,omitempty"`
-	SshKey   string 	`json:"sshkey,omitempty"`
-	Type     string 	`json:"type,omitempty"`
+	AmiID	 		string 				`json:"amiID,omitempty"`
+	SshKey   		string 				`json:"sshkey,omitempty"`
+	InstanceType 	string 				`json:"instancetype"`
+	Subnet     		string 				`json:"subnet"`
+	Tags      		map[string]string 	`json:"tags,omitempty"`
+	Storage    		StorageConfig 		`json:"storage"`
 }
 
+type StorageConfig struct {
+	Type string `json:"type"`
+	Size string `json:"size"`
+}
 // EC2InstanceStatus defines the observed state of EC2Instance.
 type EC2InstanceStatus struct {
 	Phase 		string   `json:"phase,omitempty"`
