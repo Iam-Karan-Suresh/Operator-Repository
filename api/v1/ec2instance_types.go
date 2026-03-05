@@ -33,23 +33,24 @@ type EC2InstanceSpec struct {
 
 	// foo is an example field of EC2Instance. Edit ec2instance_types.go to remove/update
 	// +optional
-	AmiID	 		string 				`json:"amiID,omitempty"`
-	SshKey   		string 				`json:"sshkey,omitempty"`
-	InstanceType 	string 				`json:"instancetype"`
-	Subnet     		string 				`json:"subnet"`
-	Tags      		map[string]string 	`json:"tags,omitempty"`
-	Storage    		StorageConfig 		`json:"storage"`
+	AmiID	 			string 				`json:"amiID,omitempty"`
+	SshKey   			string 				`json:"sshkey,omitempty"`
+	InstanceType 		string 				`json:"instancetype"`
+	Subnet     			string 				`json:"subnet"`
+	Tags      			map[string]string 	`json:"tags,omitempty"`
+	Storage    			StorageConfig 		`json:"storage"`
+	AdditionalStorage 	[]StorageConfig 	`json:"additionalStorage,omitempty"`
 }
 
 type StorageConfig struct {
-	Type string `json:"type"`
-	Size string `json:"size"`
+	Size 		string 	 `json:"size"`
+	Type 		string 	 `json:"type"`
 }
 // EC2InstanceStatus defines the observed state of EC2Instance.
 type EC2InstanceStatus struct {
-	Phase 		string   `json:"phase,omitempty"`
-	PublicIP 	string   `json:"publicIP,omitempty"`
-	InstanceID 	string   `json:"instanceID,omitempty"`
+	Phase 		string 	 `json:"phase,omitempty"`
+	PublicIP 	string 	 `json:"publicIP,omitempty"`
+	InstanceID 	string 	 `json:"instanceID,omitempty"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
