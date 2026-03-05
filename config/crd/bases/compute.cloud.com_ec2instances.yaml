@@ -39,16 +39,46 @@ spec:
           spec:
             description: EC2InstanceSpec defines the desired state of EC2Instance
             properties:
+              additionalStorage:
+                items:
+                  properties:
+                    size:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - size
+                  - type
+                  type: object
+                type: array
               amiID:
-                type: string
-              foo:
                 description: foo is an example field of EC2Instance. Edit ec2instance_types.go
                   to remove/update
                 type: string
+              instancetype:
+                type: string
               sshkey:
                 type: string
-              type:
+              storage:
+                properties:
+                  size:
+                    type: string
+                  type:
+                    type: string
+                required:
+                - size
+                - type
+                type: object
+              subnet:
                 type: string
+              tags:
+                additionalProperties:
+                  type: string
+                type: object
+            required:
+            - instancetype
+            - storage
+            - subnet
             type: object
           status:
             description: EC2InstanceStatus defines the observed state of EC2Instance.
