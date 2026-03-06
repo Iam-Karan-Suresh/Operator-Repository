@@ -52,10 +52,8 @@ spec:
                   type: object
                 type: array
               amiID:
-                description: foo is an example field of EC2Instance. Edit ec2instance_types.go
-                  to remove/update
                 type: string
-              instancetype:
+              instanceType:
                 type: string
               sshkey:
                 type: string
@@ -76,7 +74,9 @@ spec:
                   type: string
                 type: object
             required:
-            - instancetype
+            - amiID
+            - instanceType
+            - sshkey
             - storage
             - subnet
             type: object
@@ -159,10 +159,6 @@ spec:
               publicIP:
                 type: string
             type: object
-        required:
-        - metadata
-        - spec
-        - status
         type: object
     served: true
     storage: true

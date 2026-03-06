@@ -25,30 +25,31 @@ import (
 
 // EC2InstanceSpec defines the desired state of EC2Instance
 type EC2InstanceSpec struct {
-	
+
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	AmiID	 			string 				`json:"amiID,omitempty"`
-	SshKey   			string 				`json:"sshkey,omitempty"`
-	InstanceType 		string 				`json:"instancetype"`
-	Subnet     			string 				`json:"subnet"`
-	Tags      			map[string]string 	`json:"tags,omitempty"`
-	Storage    			StorageConfig 		`json:"storage"`
-	AdditionalStorage 	[]StorageConfig 	`json:"additionalStorage,omitempty"`
+	AmiID             string            `json:"amiID"`
+	SshKey            string            `json:"sshkey"`
+	InstanceType      string            `json:"instanceType"`
+	Subnet            string            `json:"subnet"`
+	Tags              map[string]string `json:"tags,omitempty"`
+	Storage           StorageConfig     `json:"storage"`
+	AdditionalStorage []StorageConfig   `json:"additionalStorage,omitempty"`
 }
 
 type StorageConfig struct {
-	Size 		string 	 `json:"size"`
-	Type 		string 	 `json:"type"`
+	Size string `json:"size"`
+	Type string `json:"type"`
 }
+
 // EC2InstanceStatus defines the observed state of EC2Instance.
 type EC2InstanceStatus struct {
-	Phase 		string 	 `json:"phase,omitempty"`
-	PublicIP 	string 	 `json:"publicIP,omitempty"`
-	InstanceID 	string 	 `json:"instanceID,omitempty"`
+	Phase      string `json:"phase,omitempty"`
+	PublicIP   string `json:"publicIP,omitempty"`
+	InstanceID string `json:"instanceID,omitempty"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
@@ -75,19 +76,19 @@ type EC2InstanceStatus struct {
 
 // EC2Instance is the Schema for the ec2instances API
 type EC2Instance struct {
-	metav1.TypeMeta 		  `json:",inline"`
-	metav1.ObjectMeta 		  `json:"metadata,omitzero"`
-	Spec EC2InstanceSpec 	  `json:"spec"` 
-	Status EC2InstanceStatus  `json:"status,omitzero"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              EC2InstanceSpec   `json:"spec,omitempty"`
+	Status            EC2InstanceStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
 // EC2InstanceList contains a list of EC2Instance
 type EC2InstanceList struct {
-	metav1.TypeMeta 		`json:",inline"`
-	metav1.ListMeta 		`json:"metadata,omitzero"`
-	Items     []EC2Instance `json:"items"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []EC2Instance `json:"items"`
 }
 
 func init() {
