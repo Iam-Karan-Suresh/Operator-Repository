@@ -31,8 +31,6 @@ type EC2InstanceSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of EC2Instance. Edit ec2instance_types.go to remove/update
-	// +optional
 	AmiID	 			string 				`json:"amiID,omitempty"`
 	SshKey   			string 				`json:"sshkey,omitempty"`
 	InstanceType 		string 				`json:"instancetype"`
