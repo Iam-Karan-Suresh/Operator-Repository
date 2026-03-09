@@ -44,22 +44,22 @@ type EC2InstanceSpec struct {
 }
 
 type StorageConfig struct {
-	RootVolume 		  		VolumeConfig 	`json:"rootVolume,omitempty"`
-	AdditionalVolumes 		[]VolumeConfig 	`json:"additionalVolumes,omitempty"`
+	RootVolume        VolumeConfig   `json:"rootVolume,omitempty"`
+	AdditionalVolumes []VolumeConfig `json:"additionalVolumes,omitempty"`
 }
 
 type VolumeConfig struct {
-	Size 			int32 	`json:"size"`
-	Type 			string 	`json:"type,omitempty"`
-	DeviceName 		string 	`json:"deviceName,omitempty"`
-	Encrypted  		bool	`json:"encrypted,omitempty"`
+	Size       int32  `json:"size"`
+	Type       string `json:"type,omitempty"`
+	DeviceName string `json:"deviceName,omitempty"`
+	Encrypted  bool   `json:"encrypted,omitempty"`
 }
 
 // EC2InstanceStatus defines the observed state of EC2Instance.
 type EC2InstanceStatus struct {
-	InstanceID 	string 		`json:"instanceID,omitempty"`
-	State      	string 		`json:"state,omitempty"`
-	PublicIP   	string 		`json:"publicIP,omitempty"`
+	InstanceID string `json:"instanceID,omitempty"`
+	State      string `json:"state,omitempty"`
+	PublicIP   string `json:"publicIP,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -70,8 +70,8 @@ type EC2Instance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec              EC2InstanceSpec   `json:"spec,omitempty"`
-	Status            EC2InstanceStatus `json:"status,omitempty"`
+	Spec   EC2InstanceSpec   `json:"spec,omitempty"`
+	Status EC2InstanceStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

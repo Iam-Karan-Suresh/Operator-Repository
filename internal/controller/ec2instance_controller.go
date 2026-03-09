@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -46,10 +47,20 @@ type EC2InstanceReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.1/pkg/reconcile
-func (r *EC2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+// req ctrl.Request is a controller-runtime concept. req contains the information about what triggered this function.
+// Usually, it just contains the Namespace and the Name of the EC2Instance resource
+// that was created, updated, or deleted in Kubernetes.
+func (r *EC2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	// l := logf.FromContext(ctx)
+	ec2Instance := &computev1.EC2Instance{}
+	r.Get(ctx, req.NamespacedName, ec2Instance)
+	fmt.Println("I got a request for an ec2Instance in the namespace", req.NamespacedName)
+	fmt.Println("the ec2 instance name is", ec2Instance.Name)
+	fmt.Println("the ec2 instance type is", ec2Instance.Spec.InstanceType)
+	fmt.Println("the ami id is", ec2Instance.Spec.AmiID)
+	fmt.Println("the ssh key is", ec2Instance.Spec.SshKey)
+	fmt.Println("the instance name is", ec2Instance.Spec.InstanceName)
 
 	return ctrl.Result{}, nil
 }
