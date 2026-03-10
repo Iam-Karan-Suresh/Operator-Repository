@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
@@ -52,17 +54,25 @@ type EC2InstanceReconciler struct {
 // Usually, it just contains the Namespace and the Name of the EC2Instance resource
 // that was created, updated, or deleted in Kubernetes.
 func (r *EC2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// l := logf.FromContext(ctx)
+    l := logf.FromContext(ctx)
+	
+	l.Info("===RECONCILE LOOP STARTED ===", "namespace", req.Namespace, "name", req.Name)
+	
+	//create a new instance of the EC2Instance struct to hold teh data retrieved from the API.
+	//This struct will be populated with the current state of the EC2Instance resource specified 
+	// by the request.
 	ec2Instance := &computev1.EC2Instance{}
-	r.Get(ctx, req.NamespacedName, ec2Instance)
-	fmt.Println("I got a request for an ec2Instance in the namespace", req.NamespacedName)
-	fmt.Println("the ec2 instance name is", ec2Instance.Name)
-	fmt.Println("the ec2 instance type is", ec2Instance.Spec.InstanceType)
-	fmt.Println("the ami id is", ec2Instance.Spec.AmiID)
-	fmt.Println("the ssh key is", ec2Instance.Spec.SshKey)
-	fmt.Println("the instance name is", ec2Instance.Spec.InstanceName)
-
-	return ctrl.Result{}, nil
+	//retrive the resource from the kubernetes API server using the 
+	// provided request's Namespace and Name 
+	if err := r.Get(ctx, req.NamespacedName, ec2Instance); err != nil {
+		if errors.IsNotFound(err) {
+			l.Info("Instance Deleted. No need to reconcile")
+            return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+	
+	
 }
 
 // SetupWithManager sets up the controller with the Manager.
