@@ -185,11 +185,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.EC2InstanceReconciler{
+	if err := (&controller.Ec2InstanceReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "EC2Instance")
+		setupLog.Error(err, "unable to create controller", "controller", "Ec2Instance")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
