@@ -31,7 +31,7 @@ type Ec2InstanceSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 	InstanceType      string            `json:"instanceType"`
-	AMIID             string            `json:"amiID"`
+	AMIId            string            `json:"amiID"`
 	Region            string            `json:"region"`
 	AvailabilityZone  string            `json:"availabilityZone,omitempty"`
 	KeyPair           string            `json:"keyPair,omitempty"`
