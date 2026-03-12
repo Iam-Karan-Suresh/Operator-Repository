@@ -8,8 +8,8 @@ metadata:
 spec:
   group: compute.cloud.com
   names:
-    kind: EC2Instance
-    listKind: EC2InstanceList
+    kind: Ec2Instance
+    listKind: Ec2InstanceList
     plural: ec2instances
     singular: ec2instance
   scope: Namespaced
@@ -17,7 +17,7 @@ spec:
   - name: v1
     schema:
       openAPIV3Schema:
-        description: EC2Instance is the Schema for the ec2instances API
+        description: Ec2Instance is the Schema for the ec2instances API
         properties:
           apiVersion:
             description: |-
@@ -37,7 +37,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: EC2InstanceSpec defines the desired state of EC2Instance
+            description: EC2InstanceSpec defines the desired state of Ec2Instance
             properties:
               amiID:
                 type: string
@@ -105,7 +105,7 @@ spec:
             - region
             type: object
           status:
-            description: EC2InstanceStatus defines the observed state of EC2Instance.
+            description: Ec2InstanceStatus defines the observed state of Ec2Instance.
             properties:
               instanceID:
                 type: string

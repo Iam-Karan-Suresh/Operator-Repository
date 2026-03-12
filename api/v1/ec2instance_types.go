@@ -23,8 +23,8 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// EC2InstanceSpec defines the desired state of EC2Instance
-type EC2InstanceSpec struct {
+// EC2InstanceSpec defines the desired state of Ec2Instance
+type Ec2InstanceSpec struct {
 
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -55,8 +55,8 @@ type VolumeConfig struct {
 	Encrypted  bool   `json:"encrypted,omitempty"`
 }
 
-// EC2InstanceStatus defines the observed state of EC2Instance.
-type EC2InstanceStatus struct {
+// Ec2InstanceStatus defines the observed state of Ec2Instance.
+type Ec2InstanceStatus struct {
 	InstanceID string `json:"instanceID,omitempty"`
 	State      string `json:"state,omitempty"`
 	PublicIP   string `json:"publicIP,omitempty"`
@@ -65,24 +65,32 @@ type EC2InstanceStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// EC2Instance is the Schema for the ec2instances API
-type EC2Instance struct {
+// Ec2Instance is the Schema for the ec2instances API
+type Ec2Instance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   EC2InstanceSpec   `json:"spec,omitempty"`
-	Status EC2InstanceStatus `json:"status,omitempty"`
+	Spec   Ec2InstanceSpec   `json:"spec,omitempty"`
+	Status Ec2InstanceStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// EC2InstanceList contains a list of EC2Instance
-type EC2InstanceList struct {
+// Ec2InstanceList contains a list of Ec2Instance
+type Ec2InstanceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []EC2Instance `json:"items"`
+	Items           []Ec2Instance `json:"items"`
 }
 
+type CreatedInstanceInfo struct {
+	InstanceID string `json:"instanceID"`
+	PublicIP   string `json:"publicIP"`
+	PrivateIP  string `json:"privateIP"`
+	PublicDNS  string `json:"publicDNS"`
+	PrivateDNS string `json:"privateDNS"`
+	State      string `json:"state"`
+}
 func init() {
-	SchemeBuilder.Register(&EC2Instance{}, &EC2InstanceList{})
+	SchemeBuilder.Register(&Ec2Instance{}, &Ec2InstanceList{})
 }
