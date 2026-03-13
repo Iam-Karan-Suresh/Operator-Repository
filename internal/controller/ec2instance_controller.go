@@ -98,6 +98,14 @@ l.Info("=== ABOUT TO UPDATE STATUS - This will trigger reconciler loop again ===
 "instanceID", createdInstanceInfo.InstanceID,
 "state", createdInstanceInfo.State)
 
+ec2Instance.Status.InstanceID = createdInstanceInfo.InstanceID
+ec2Instance.Status.State = createdInstanceInfo.State
+ec2Instance.Status.PublicIP = createdInstanceInfo.PublicIP
+ec2Instance.Status.PrivateIP = createdInstanceInfo.PrivateIP
+ec2Instance.Status.PublicDNS = createdInstanceInfo.PublicDNS
+ec2Instance.Status.PrivateDNS = createdInstanceInfo.PrivateDNS
+
+
 
 
 
