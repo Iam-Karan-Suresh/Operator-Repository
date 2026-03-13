@@ -60,6 +60,10 @@ type Ec2InstanceStatus struct {
 	InstanceID string `json:"instanceID,omitempty"`
 	State      string `json:"state,omitempty"`
 	PublicIP   string `json:"publicIP,omitempty"`
+	PrivateIP  string `json:"privateIP,omitempty"`
+	PublicDNS  string `json:"publicDNS,omitempty"`
+	PrivateDNS string `json:"privateDNS,omitempty"`
+	LaunchTime string `json:"launchTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true
