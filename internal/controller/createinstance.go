@@ -93,9 +93,31 @@ fmt.Printf("InstanceId of the instance: %v", derefString(inst.InstanceId))
 fmt.Printf("Image ID of the instance: %v", derefString(inst.ImageId))
 fmt.Printf("Key name of the instance: %v", derefString(inst.KeyName))
 
+//block until the instance is  running
+//blockUntilInstanceRunning(ctx, ec2Instance.Status.InstanceID, ec2Instance)
+
+//Get the instance details safely (public IP/DNS might be nil for private subnets)
+instance := describeResult.Reservations[0].Instances[0]
+createdInstanceInfo = &computev1.CreatedInstanceInfo{
+	InstanceID: *inst.InstanceId ,
+	PublicIP: derefString(instance.PublicIpAddress),
+	State: string(instance.State.Name),
+	PrivateIP: derefString(instance.PrivateIpAddress),
+	PublicDNS: derefString(instance.PublicDnsName),
+	PrivateDNS: derefString(instance.PrivateDnsName),
+}
+l.Info("=== EC2 INSTANCE CREATION COMPLETED ===",
+"instanceID", createdInstanceInfo.InstanceID,
+"state", createdInstanceInfo.State,
+"publicIP", createdInstanceInfo.PublicIP,
+)
+
+//for now return nil to indicate success
+return createdInstanceInfo, nil
 
 }
 
+//derefString is a helper function to dereference  *string 
 func derefString(s *string) string {
 	if s != nil {
 		return *s
