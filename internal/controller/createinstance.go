@@ -93,5 +93,12 @@ fmt.Printf("InstanceId of the instance: %v", derefString(inst.InstanceId))
 fmt.Printf("Image ID of the instance: %v", derefString(inst.ImageId))
 fmt.Printf("Key name of the instance: %v", derefString(inst.KeyName))
 
-	
+
+}
+
+func derefString(s *string) string {
+	if s != nil {
+		return *s
+	}
+	return "<nil>"
 }
