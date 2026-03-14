@@ -31,7 +31,7 @@ type Ec2InstanceSpec struct {
 	// The following markers will use OpenAPI v3 schema to validate the value
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 	InstanceType      string            `json:"instanceType"`
-	AMIId            string            `json:"amiID"`
+	AMIId             string            `json:"amiId"`
 	Region            string            `json:"region"`
 	AvailabilityZone  string            `json:"availabilityZone,omitempty"`
 	KeyPair           string            `json:"keyPair,omitempty"`
@@ -95,6 +95,7 @@ type CreatedInstanceInfo struct {
 	PrivateDNS string `json:"privateDNS"`
 	State      string `json:"state"`
 }
+
 func init() {
 	SchemeBuilder.Register(&Ec2Instance{}, &Ec2InstanceList{})
 }

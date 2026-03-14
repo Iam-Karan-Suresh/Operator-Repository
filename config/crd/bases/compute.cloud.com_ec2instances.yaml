@@ -39,7 +39,7 @@ spec:
           spec:
             description: EC2InstanceSpec defines the desired state of Ec2Instance
             properties:
-              amiID:
+              amiId:
                 type: string
               associatePublicIP:
                 type: boolean
@@ -100,7 +100,7 @@ spec:
               userData:
                 type: string
             required:
-            - amiID
+            - amiId
             - instanceType
             - region
             type: object

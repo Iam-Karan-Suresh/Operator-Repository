@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
@@ -53,18 +52,18 @@ type Ec2InstanceReconciler struct {
 // Usually, it just contains the Namespace and the Name of the Ec2Instance resource
 // that was created, updated, or deleted in Kubernetes.
 func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    l := logf.FromContext(ctx)
-	
+	l := logf.FromContext(ctx)
+
 	l.Info("===RECONCILE LOOP STARTED ===", "namespace", req.Namespace, "name", req.Name)
-	
+
 	//create a new instance of the Ec2Instance struct to hold teh data retrieved from the API.
-	//This struct will be populated with the current state of the EC2Instance resource specified 
+	//This struct will be populated with the current state of the EC2Instance resource specified
 	// by the request.
 	ec2Instance := &computev1.Ec2Instance{}
-	//retrive the resource from the kubernetes API server using the 
-	// provided request's Namespace and Name 
-	if err := r.Get(ctx, req.NamespacedName, ec2Instance ); err != nil {
-		if errors.IsNotFound(err){
+	//retrive the resource from the kubernetes API server using the
+	// provided request's Namespace and Name
+	if err := r.Get(ctx, req.NamespacedName, ec2Instance); err != nil {
+		if errors.IsNotFound(err) {
 			l.Info("Instance Deleted. No need to reconcile")
 			return ctrl.Result{}, nil
 		}
@@ -72,54 +71,50 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-//Check if we already have an instance ID in status
-if ec2Instance.Status.InstanceID != "" {
-	l.Info("Requested object is already exists in kubernetes. Not creating a new instance", "instanceID", ec2Instance.Status.InstanceID)
-	return ctrl.Result{}, nil
-}
+	// Check if we already have an instance ID in status
+	if ec2Instance.Status.InstanceID != "" {
+		l.Info("Requested object is already exists in kubernetes. Not creating a new instance", "instanceID", ec2Instance.Status.InstanceID)
+		return ctrl.Result{}, nil
+	}
 
-l.Info("Creating new Instance")
-l.Info(" === ABOUT TO ADD FINALIZER ===")
+	l.Info("Creating new Instance")
+	l.Info(" === ABOUT TO ADD FINALIZER ===")
 
+	ec2Instance.Finalizers = append(ec2Instance.Finalizers, "ec2instance.compute.cloud.com")
+	if err := r.Update(ctx, ec2Instance); err != nil {
+		l.Error(err, "Failed to add finalizer")
+		return ctrl.Result{
+			Requeue: true,
+		}, err
+	}
+	l.Info(" === FINALIZER ADDED - This update will trigger a new reconcile loop, but the current reconcile continues ===")
 
-ec2Instance.Finalizers = append(ec2Instance.Finalizers, "ec2instance.compute.cloud.com")
-if err := r.Update(ctx, ec2Instance); err != nil {
-	l.Error(err, "Failed to add finalizer")
-	return ctrl.Result{
-		Requeue: true,
-	}, err
-}
-l.Info(" === FINALIZER ADDED - This update will trigger a new reconcile loop, but the current reconcile continues ===")
+	// create a new Instance
+	l.Info(" === CONTINUING WITH EC2 INSTANCE CREATION IN CURRENT RECONCILE LOOP ===")
 
-//create a new Instance
-l.Info(" === CONTINUING WITH EC2 INSTANCE CREATION IN CURRENT RECONCILE LOOP ===")
+	createdInstanceInfo, err := createEc2Instance(ec2Instance)
+	if err != nil {
+		l.Error(err, "Failed to create EC2 Instance")
+		return ctrl.Result{}, err
+	}
 
-createdInstanceInfo, err := createEc2Instance(ec2Instance)
-if err != nil {
-	l.Error(err,"Failed to create EC2 Instance")
-	return ctrl.Result{}, err
-}
+	l.Info("=== ABOUT TO UPDATE STATUS - This will trigger reconciler loop again ===",
+		"instanceID", createdInstanceInfo.InstanceID,
+		"state", createdInstanceInfo.State)
 
-l.Info("=== ABOUT TO UPDATE STATUS - This will trigger reconciler loop again ===",
-"instanceID", createdInstanceInfo.InstanceID,
-"state", createdInstanceInfo.State)
+	ec2Instance.Status.InstanceID = createdInstanceInfo.InstanceID
+	ec2Instance.Status.State = createdInstanceInfo.State
+	ec2Instance.Status.PublicIP = createdInstanceInfo.PublicIP
+	ec2Instance.Status.PrivateIP = createdInstanceInfo.PrivateIP
+	ec2Instance.Status.PublicDNS = createdInstanceInfo.PublicDNS
+	ec2Instance.Status.PrivateDNS = createdInstanceInfo.PrivateDNS
 
-ec2Instance.Status.InstanceID = createdInstanceInfo.InstanceID
-ec2Instance.Status.State = createdInstanceInfo.State
-ec2Instance.Status.PublicIP = createdInstanceInfo.PublicIP
-ec2Instance.Status.PrivateIP = createdInstanceInfo.PrivateIP
-ec2Instance.Status.PublicDNS = createdInstanceInfo.PublicDNS
-ec2Instance.Status.PrivateDNS = createdInstanceInfo.PrivateDNS
-
-
-err = r.Status().Update(ctx, ec2Instance)
-if err != nil {
-	l.Error(err, "Failed to update status")
-	return ctrl.Result{}, err
-}
-l.Info(" === STATUS UPDATED - Reconcile loop will be triggered again ===")
-
-
+	err = r.Status().Update(ctx, ec2Instance)
+	if err != nil {
+		l.Error(err, "Failed to update status")
+		return ctrl.Result{}, err
+	}
+	l.Info(" === STATUS UPDATED - Reconcile loop will be triggered again ===")
 
 	return ctrl.Result{}, nil
 }
