@@ -56,8 +56,10 @@ spec:
                 type: string
               region:
                 type: string
-              securityGroup:
-                type: string
+              securityGroups:
+                items:
+                  type: string
+                type: array
               storage:
                 properties:
                   additionalVolumes:

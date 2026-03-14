@@ -35,7 +35,7 @@ type Ec2InstanceSpec struct {
 	Region            string            `json:"region"`
 	AvailabilityZone  string            `json:"availabilityZone,omitempty"`
 	KeyPair           string            `json:"keyPair,omitempty"`
-	SecurityGroup     string            `json:"securityGroup,omitempty"`
+	SecurityGroups    []string          `json:"securityGroups,omitempty"`
 	Subnet            string            `json:"subnet,omitempty"`
 	UserData          string            `json:"userData,omitempty"`
 	Tags              map[string]string `json:"tags,omitempty"`
