@@ -66,7 +66,7 @@ func createEc2Instance(ec2Instance *computev1.Ec2Instance) (createdInstanceInfo 
 // 2. Getting the state of the instance 
 // we do this so we can send the instance's state to the status of the custom resource. for user to see with 
 l.Info(" === CALLING AWS DescribeInstances API TO GET INSTACE DETAILS ===")
-describeInput := ec2.DescribeInstancesInput{
+describeInput := &ec2.DescribeInstancesInput{
 	InstanceIds: []string{*inst.InstanceId},
 }
 

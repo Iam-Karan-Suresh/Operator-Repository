@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -72,6 +71,13 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		//kubernetes will retry with backoff
 		return ctrl.Result{}, err
 	}
+
+//Check if we already have an instance ID in status
+if ec2Instance.Status.InstanceID != "" {
+	l.Info("Requested object is already exists in kubernetes. Not creating a new instance", "instanceID", ec2Instance.Status.InstanceID)
+	return ctrl.Result{}, nil
+}
+
 l.Info("Creating new Instance")
 l.Info(" === ABOUT TO ADD FINALIZER ===")
 
@@ -106,9 +112,12 @@ ec2Instance.Status.PublicDNS = createdInstanceInfo.PublicDNS
 ec2Instance.Status.PrivateDNS = createdInstanceInfo.PrivateDNS
 
 
-
-
-
+err = r.Status().Update(ctx, ec2Instance)
+if err != nil {
+	l.Error(err, "Failed to update status")
+	return ctrl.Result{}, err
+}
+l.Info(" === STATUS UPDATED - Reconcile loop will be triggered again ===")
 
 
 
