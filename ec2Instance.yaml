@@ -5,8 +5,8 @@ metadata:
   namespace: default
 
 spec:
-  instanceType: t3.medium
-  amiId: ami-09042b2f60d7d164a   # Amazon Linux 2
+  instanceType: t2.micro
+  amiId: ami-0b6c6ebed2801a5cb  #ubuntu 24
   region: us-east-1
   availabilityZone: us-east-1a
 
@@ -15,14 +15,14 @@ spec:
   securityGroups:
     - sg-04eaef9abc89a4b09
 
-  subnet: subnet-0d417570cce95f348
+  subnet: subnet-0af73b8bcb11de4e2
 
   userData: |
     #!/bin/bash
-    yum update -y
-    yum install -y httpd
-    systemctl start httpd
-    systemctl enable httpd
+    apt update -y
+    apt install -y apache2
+    systemctl start apache2
+    systemctl enable apache2
 
   tags:
     Name: k8s-managed-web-server
@@ -31,12 +31,12 @@ spec:
 
   storage:
     rootVolume:
-      size: 30
+      size: 18
       type: gp3
       encrypted: true
 
     additionalVolumes:
-      - size: 100
+      - size: 5
         type: gp3
         deviceName: /dev/sdf
         encrypted: true
