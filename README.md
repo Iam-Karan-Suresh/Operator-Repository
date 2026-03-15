@@ -117,6 +117,7 @@ is manually re-applied afterwards.
 
 More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Iam-Karan-Suresh/Operator-Repository?utm_source=oss&utm_medium=github&utm_campaign=Iam-Karan-Suresh%2FOperator-Repository&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 ## License
 
 Copyright 2026.
