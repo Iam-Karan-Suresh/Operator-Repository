@@ -19,13 +19,13 @@ package controller
 import (
 	"context"
 
+	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 )
 
 // Ec2InstanceReconciler reconciles a Ec2Instance object
@@ -71,6 +71,35 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	//check if deletionTimestamp is not zero
+	if !ec2Instance.DeletionTimestamp.IsZero() {
+		l.Info("Has deletionTimestamp, Instance is being deleted")
+		_, err := deleteEc2Instance(ctx, ec2Instance)
+		if err != nil {
+			l.Error(err, "Failed to delete EC2 instance")
+			// Kubernetes will retry with backoff
+			return ctrl.Result{Requeue: true}, err
+		}
+
+		// Remove the finalizer
+		controllerutil.RemoveFinalizer(ec2Instance, "ec2instance.compute.cloud.com")
+		if err := r.Update(ctx, ec2Instance); err != nil {
+			l.Error(err, "Failed to remove finalizer")
+			// Kubernetes will retry with backoff
+			return ctrl.Result{Requeue: true}, err
+		}
+		// at this point, the instance state is terminated and the finalizer is removed
+		return ctrl.Result{}, nil
+	}
+
+	// if errors.IsNotFound(err) {
+	// 	// Object was deleted
+	// 	fmt.Println("Ran kubectl delete ec2instance")
+	// 	l.Info("Got a delete request for the instance. Will delete the instance from AWS")
+	// 	// Any cleanup logic here (though you can't access the object anymore)
+	// 	return ctrl.Result{}, nil
+	// }
+
 	// Check if we already have an instance ID in status
 	if ec2Instance.Status.InstanceID != "" {
 		l.Info("Requested object is already exists in kubernetes. Not creating a new instance", "instanceID", ec2Instance.Status.InstanceID)
@@ -78,16 +107,17 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	l.Info("Creating new Instance")
-	l.Info(" === ABOUT TO ADD FINALIZER ===")
-
-	ec2Instance.Finalizers = append(ec2Instance.Finalizers, "ec2instance.compute.cloud.com")
-	if err := r.Update(ctx, ec2Instance); err != nil {
-		l.Error(err, "Failed to add finalizer")
-		return ctrl.Result{
-			Requeue: true,
-		}, err
+	// Check if already contains finalizer, add it otherwise
+	if !controllerutil.ContainsFinalizer(ec2Instance, "ec2instance.compute.cloud.com") {
+		l.Info(" === ABOUT TO ADD FINALIZER ===")
+		controllerutil.AddFinalizer(ec2Instance, "ec2instance.compute.cloud.com")
+		if err := r.Update(ctx, ec2Instance); err != nil {
+			l.Error(err, "Failed to add finalizer")
+			return ctrl.Result{Requeue: true}, err
+		}
+		l.Info(" === FINALIZER ADDED - Returning to trigger new reconcile loop cleanly ===")
+		return ctrl.Result{}, nil
 	}
-	l.Info(" === FINALIZER ADDED - This update will trigger a new reconcile loop, but the current reconcile continues ===")
 
 	// create a new Instance
 	l.Info(" === CONTINUING WITH EC2 INSTANCE CREATION IN CURRENT RECONCILE LOOP ===")

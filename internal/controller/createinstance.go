@@ -36,7 +36,8 @@ func createEc2Instance(ec2Instance *computev1.Ec2Instance) (createdInstanceInfo 
 	//run the instances
 	result, err := ec2Client.RunInstances(context.TODO(), runInput)
 	if err != nil {
-		l.Error(err, "failed to create EC2 instance: %w", err)
+		l.Error(err, "failed to create EC2 instance")
+		return nil, fmt.Errorf("failed to create EC2 instance: %w", err)
 	}
 	if len(result.Instances) == 0 {
 		l.Error(err, "no instance returned in RunInstancesOutput")
