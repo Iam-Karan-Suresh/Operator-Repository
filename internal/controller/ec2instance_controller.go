@@ -56,22 +56,22 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	l.Info("===RECONCILE LOOP STARTED ===", "namespace", req.Namespace, "name", req.Name)
 
-	//create a new instance of the Ec2Instance struct to hold teh data retrieved from the API.
-	//This struct will be populated with the current state of the EC2Instance resource specified
+	// create a new instance of the Ec2Instance struct to hold the data retrieved from the API.
+	// This struct will be populated with the current state of the EC2Instance resource specified
 	// by the request.
 	ec2Instance := &computev1.Ec2Instance{}
-	//retrive the resource from the kubernetes API server using the
+	// retrieve the resource from the kubernetes API server using the
 	// provided request's Namespace and Name
 	if err := r.Get(ctx, req.NamespacedName, ec2Instance); err != nil {
 		if errors.IsNotFound(err) {
 			l.Info("Instance Deleted. No need to reconcile")
 			return ctrl.Result{}, nil
 		}
-		//kubernetes will retry with backoff
+		// kubernetes will retry with backoff
 		return ctrl.Result{}, err
 	}
 
-	//check if deletionTimestamp is not zero
+	// check if deletionTimestamp is not zero
 	if !ec2Instance.DeletionTimestamp.IsZero() {
 		l.Info("Has deletionTimestamp, Instance is being deleted")
 		_, err := deleteEc2Instance(ctx, ec2Instance)

@@ -20,20 +20,20 @@ func createEc2Instance(ec2Instance *computev1.Ec2Instance) (createdInstanceInfo 
 		"instanceType", ec2Instance.Spec.InstanceType,
 		"region", ec2Instance.Spec.Region,
 	)
-	//create the client for the ec2 instance
+	// create the client for the ec2 instance
 	ec2Client := awsClient(ec2Instance.Spec.Region)
 
-	//create the input for the ec2 instance
+	// create the input for the ec2 instance
 	runInput := &ec2.RunInstancesInput{
 		ImageId:      aws.String(ec2Instance.Spec.AMIId),
 		InstanceType: ec2types.InstanceType(ec2Instance.Spec.InstanceType),
 		SubnetId:     aws.String(ec2Instance.Spec.Subnet),
 		MinCount:     aws.Int32(1),
 		MaxCount:     aws.Int32(1),
-		//SecurityGroupIds: []string{ec2Instance.Spec.SecurityGroup[0]},
+		// SecurityGroupIds: []string{ec2Instance.Spec.SecurityGroup[0]},
 	}
 	l.Info(" === CALLING AWS RunInstances API === ")
-	//run the instances
+	// run the instances
 	result, err := ec2Client.RunInstances(context.TODO(), runInput)
 	if err != nil {
 		l.Error(err, "failed to create EC2 instance")
@@ -45,8 +45,8 @@ func createEc2Instance(ec2Instance *computev1.Ec2Instance) (createdInstanceInfo 
 		return nil, nil
 	}
 
-	//till here the instance is created and we have
-	//Instance ID, private dns and IP, instance type,image id
+	// till here the instance is created and we have
+	// Instance ID, private dns and IP, instance type,image id
 	inst := result.Instances[0]
 	l.Info(" === EC2 INSTANCE CREATED SUCCESSFULLY === ", "instanceID", *inst.InstanceId)
 	l.Info(" === WAITING FOR INSTANCE TO BE IN RUNNING STATE === ")
@@ -76,7 +76,7 @@ func createEc2Instance(ec2Instance *computev1.Ec2Instance) (createdInstanceInfo 
 		l.Error(err, "Failed to describe the EC2 instance")
 		return nil, fmt.Errorf("failed to describe EC2 instance: %w", err)
 	}
-	fmt.Println("Describe result", "public ip", *describeResult.Reservations[0].Instances[0].PublicDnsName, "state", *&describeResult.Reservations[0].Instances[0].State)
+	fmt.Println("Describe result", "public ip", *describeResult.Reservations[0].Instances[0].PublicDnsName, "state", describeResult.Reservations[0].Instances[0].State)
 
 	// you get "invalid memory address or nil pointer dereference here if any of the following are true"
 	// - result.Instances is nil or has length 0
@@ -84,7 +84,7 @@ func createEc2Instance(ec2Instance *computev1.Ec2Instance) (createdInstanceInfo 
 
 	// To avoid this, always check for nil and length before dereferencing:
 
-	//wait for a bit to allow instance fields to be populated
+	// wait for a bit to allow instance fields to be populated
 
 	fmt.Printf("Private IP of the instance: %v", derefString(inst.PrivateIpAddress))
 	fmt.Printf("State of the instance: %v", describeResult.Reservations[0].Instances[0].State.Name)
@@ -93,8 +93,8 @@ func createEc2Instance(ec2Instance *computev1.Ec2Instance) (createdInstanceInfo 
 	fmt.Printf("Image ID of the instance: %v", derefString(inst.ImageId))
 	fmt.Printf("Key name of the instance: %v", derefString(inst.KeyName))
 
-	//block until the instance is  running
-	//blockUntilInstanceRunning(ctx, ec2Instance.Status.InstanceID, ec2Instance)
+	// block until the instance is  running
+	// blockUntilInstanceRunning(ctx, ec2Instance.Status.InstanceID, ec2Instance)
 
 	// Get the instance details safely (public IP/DNS might be nil for private subnets)
 	instance := describeResult.Reservations[0].Instances[0]

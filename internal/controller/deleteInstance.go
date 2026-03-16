@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
