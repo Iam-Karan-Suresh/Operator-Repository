@@ -19,13 +19,13 @@ package controller
 import (
 	"context"
 
+	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 )
 
 // Ec2InstanceReconciler reconciles a Ec2Instance object
@@ -70,6 +70,27 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		//kubernetes will retry with backoff
 		return ctrl.Result{}, err
 	}
+
+	// Check if the deletion timestamp is not zero
+
+	if !ec2Instance.DeletionTimestamp.IsZero() {
+		l.Info("Has deletionTimeStamp, Instance is being deleted")
+		_, err := deleteEc2Instance(ctx, ec2Instance)
+		if err != nil {
+			l.Error(err, "Failed to delete EC2 instance")
+			return ctrl.Result{Requeue: true}, err
+		}
+
+		// Remove the finalizer
+		controllerutil.RemoveFinalizer(ec2Instance, "ec2instance.compute.cloud.com")
+
+		if err := r.Update(ctx, ec2Instance); err != nil {
+			l.Error(err, "Failed to remove finalizer")
+			return ctrl.Result{Requeue: true}, err
+		}
+		l.Info("Finalizer removed. Instance deletion completed")
+		return ctrl.Result{}, nil
+	}  
 
 	// Check if we already have an instance ID in status
 	if ec2Instance.Status.InstanceID != "" {

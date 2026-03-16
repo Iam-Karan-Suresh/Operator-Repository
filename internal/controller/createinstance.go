@@ -99,7 +99,7 @@ func createEc2Instance(ec2Instance *computev1.Ec2Instance) (createdInstanceInfo 
 	// block until the instance is  running
 	// blockUntilInstanceRunning(ctx, ec2Instance.Status.InstanceID, ec2Instance)
 
-	// Get the instance details safely (public IP/DNS might be nil for private subnets)
+	// Get the instance details safely (public IP/DNS might be nil for private subnetcs)
 	instance = describeResult.Reservations[0].Instances[0]
 	createdInstanceInfo = &computev1.CreatedInstanceInfo{
 		InstanceID: *inst.InstanceId,
