@@ -40,17 +40,17 @@ type Ec2InstanceReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Ec2Instance object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
+//
+// After updating the status of the resource (e.g., with r.Status().Update), the Kubernetes API server
+// will emit an update event for the resource. This event will be picked up by the controller-runtime
+// and will cause the Reconcile function to be called again for the same resource. This is why, after
+// updating the status, the reconciler is called again: it is a result of the Kubernetes watch mechanism
+// and ensures that the controller can observe and react to any changes, including those it made itself.
+// This pattern is common in Kubernetes controllers to ensure eventual consistency and to handle
+// situations where the status update may not have been fully applied or observed yet.
 //
 // For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.1/pkg/reconcile
-
-// req ctrl.Request is a controller-runtime concept. req contains the information about what triggered this function.
-// Usually, it just contains the Namespace and the Name of the Ec2Instance resource
-// that was created, updated, or deleted in Kubernetes.
+// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
 func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := logf.FromContext(ctx)
 
@@ -103,6 +103,33 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Check if we already have an instance ID in status
 	if ec2Instance.Status.InstanceID != "" {
 		l.Info("Requested object is already exists in kubernetes. Not creating a new instance", "instanceID", ec2Instance.Status.InstanceID)
+		
+		//drift detection mechanism
+		instanceExist, instanceState, err := checkEC2InstanceExists(ctx, ec2Instance.Status.InstanceID, ec2Instance)
+		if err != nil {
+			ec2Instance.Status.InstanceID = ""
+			ec2Instance.Status.State = ""
+			ec2Instance.Status.PublicIP = ""
+			ec2Instance.Status.PrivateIP = ""
+			ec2Instance.Status.PublicDNS = ""
+			ec2Instance.Status.PrivateDNS = ""
+			return ctrl.Result{Requeue: true}, r.Status().Update(ctx, ec2Instance)
+		}
+		if !instanceExist {
+			l.Info("Instance does not exist or is not running", "instanceID", ec2Instance.Status.InstanceID)
+			ec2Instance.Status.State = "Unknown"
+			ec2Instance.Status.PublicIP = ""
+			r.Status().Update(ctx, ec2Instance)
+			return ctrl.Result{}, nil
+		}
+		if instanceExist && ec2Instance.Status.State == "Unknown" {
+			l.Info("Found a running Instance", "instanceID", ec2Instance.Status.InstanceID)
+			ec2Instance.Status.State = string(*instanceState.InstanceId)
+			ec2Instance.Status.PublicIP = *instanceState.PublicIpAddress
+			r.Status().Update(ctx, ec2Instance)
+			return ctrl.Result{}, nil
+		}
+
 		return ctrl.Result{}, nil
 	}
 
