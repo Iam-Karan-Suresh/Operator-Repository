@@ -6,6 +6,8 @@ cliVersion: 4.11.1
 domain: cloud.com
 layout:
 - go.kubebuilder.io/v4
+plugins:
+  helm.kubebuilder.io/v1-alpha: {}
 projectName: operator
 repo: github.com/Iam-Karan-Suresh/operator-repo
 resources:
