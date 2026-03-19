@@ -103,8 +103,8 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Check if we already have an instance ID in status
 	if ec2Instance.Status.InstanceID != "" {
 		l.Info("Requested object is already exists in kubernetes. Not creating a new instance", "instanceID", ec2Instance.Status.InstanceID)
-		
-		//drift detection mechanism
+
+		// Drift detection mechanism
 		instanceExist, instanceState, err := checkEC2InstanceExists(ctx, ec2Instance.Status.InstanceID, ec2Instance)
 		if err != nil {
 			ec2Instance.Status.InstanceID = ""
@@ -119,14 +119,18 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			l.Info("Instance does not exist or is not running", "instanceID", ec2Instance.Status.InstanceID)
 			ec2Instance.Status.State = "Unknown"
 			ec2Instance.Status.PublicIP = ""
-			r.Status().Update(ctx, ec2Instance)
+			if err := r.Status().Update(ctx, ec2Instance); err != nil {
+				return ctrl.Result{}, err
+			}
 			return ctrl.Result{}, nil
 		}
 		if instanceExist && ec2Instance.Status.State == "Unknown" {
 			l.Info("Found a running Instance", "instanceID", ec2Instance.Status.InstanceID)
-			ec2Instance.Status.State = string(*instanceState.InstanceId)
+			ec2Instance.Status.State = *instanceState.InstanceId
 			ec2Instance.Status.PublicIP = *instanceState.PublicIpAddress
-			r.Status().Update(ctx, ec2Instance)
+			if err := r.Status().Update(ctx, ec2Instance); err != nil {
+				return ctrl.Result{}, err
+			}
 			return ctrl.Result{}, nil
 		}
 
