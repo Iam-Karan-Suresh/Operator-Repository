@@ -68,6 +68,10 @@ type Ec2InstanceStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.state",description="The current state of the EC2 instance"
+// +kubebuilder:printcolumn:name="Instance ID",type="string",JSONPath=".status.instanceID",description="The AWS Instance ID"
+// +kubebuilder:printcolumn:name="Public IP",type="string",JSONPath=".status.publicIP",description="The Public IP address"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // Ec2Instance is the Schema for the ec2instances API
 type Ec2Instance struct {

@@ -1,136 +1,63 @@
-# operator
-// TODO(user): Add simple overview of use/purpose
+# EC2 Instance Operator & Dashboard
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A production-grade Kubernetes operator to manage AWS EC2 instances with a real-time, glassmorphism-styled dashboard and full observability stack.
 
-## Getting Started
+## 🚀 Quick Start (Minikube / Local)
 
-### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+### 1. Prerequisites
+- **Minikube** installed and running
+- **Helm** v3+
+- **AWS CLI** configured (`aws configure`)
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+### 2. Configure AWS Access
+The operator uses your local AWS credentials. Ensure you have the necessary permissions for EC2 (e.g., `AmazonEC2FullAccess`).
 
-```sh
-make docker-build docker-push IMG=<some-registry>/operator:tag
+### 3. Deploy the Stack
+Deploy the operator, dashboard, and full observability stack with a single command:
+
+```bash
+# From the root of the repository
+helm upgrade --install operator dist/chart/
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+### 4. Access the Dashboard
+Expose the dashboard service to your local machine:
 
-**Install the CRDs into the cluster:**
+```bash
+kubectl port-forward svc/operator-dashboard 3000:3000
+```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-```sh
-make install
+## 📊 Features
+- **Declarative AWS EC2 Management**: Provision instances via `Ec2Instance` CRDs.
+- **Real-time Visualization**: Glassmorphism UI with Server-Sent Events (SSE).
+- **Drift Detection**: Automatically syncs Kubernetes state with AWS changes.
+- **Full Observability**: Integrated Prometheus, Grafana, Jaeger (Tracing), and OpenCost.
+- **Personalized Experience**: Save your name and team preferences directly to the cluster.
+
+## 📖 Component Documentation
+- [Operator Architecture & Flow](docs/OPERATOR.md)
+- [UI Features & Design](docs/UI.md)
+- [System Architecture](docs/ARCHITECTURE.md)
+- [Changelog & Evolution](docs/CHANGELOG.md)
+
+## 🛠 Usage Example
+Create your first instance:
+```yaml
+apiVersion: compute.cloud.com/v1
+kind: Ec2Instance
+metadata:
+  name: prod-web-server
+spec:
+  region: "us-east-1"
+  amiID: "ami-0c55b159cbfafe1f0" # Amazon Linux 2
+  instanceType: "t3.micro"
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+## 📜 Metrics & Tracing
+- **Grafana**: Access dashboards via `kubectl port-forward svc/operator-grafana 8080:80`.
+- **Jaeger**: View AWS SDK traces at `http://localhost:16686`.
+- **Metrics**: Real-time stats available in the Metrics tab of the dashboard.
 
-```sh
-make deploy IMG=<some-registry>/operator:tag
-```
-
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
-
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
-```
-
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
-```
-
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
-![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Iam-Karan-Suresh/Operator-Repository?utm_source=oss&utm_medium=github&utm_campaign=Iam-Karan-Suresh%2FOperator-Repository&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
-## License
-
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+---
+Built by **Antigravity Team**

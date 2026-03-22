@@ -6,23 +6,25 @@ import (
 	"fmt"
 
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func checkEC2InstanceExists(ctx context.Context, instanceID string, ec2Instance *computev1.Ec2Instance) (bool, *ec2types.Instance, error) {
+	tracer := otel.GetTracerProvider().Tracer("ec2-operator")
+	ctx, span := tracer.Start(ctx, "AWS.DescribeInstances", trace.WithAttributes(
+		attribute.String("instance.id", instanceID),
+	))
+	defer span.End()
+
 	ec2Client := awsClient(ec2Instance.Spec.Region)
 
 	input := &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceID},
-		Filters: []ec2types.Filter{
-			{
-				Name:   aws.String("instance-state-name"),
-				Values: []string{"running"},
-			},
-		},
 	}
 
 	result, err := ec2Client.DescribeInstances(ctx, input)

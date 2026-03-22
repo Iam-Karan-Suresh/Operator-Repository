@@ -1,0 +1,22 @@
+export interface InstanceResponse {
+  name: string;
+  namespace: string;
+  instanceID: string;
+  state: string;
+  publicIP: string;
+  privateIP: string;
+  publicDNS: string;
+  privateDNS: string;
+  instanceType: string;
+  amiId: string;
+  region: string;
+  availabilityZone?: string;
+  tags?: Record<string, string>;
+  createdAt: string;
+  age: string;
+}
+
+export interface WatchEvent {
+  type: 'ADDED' | 'MODIFIED' | 'DELETED';
+  object: InstanceResponse;
+}

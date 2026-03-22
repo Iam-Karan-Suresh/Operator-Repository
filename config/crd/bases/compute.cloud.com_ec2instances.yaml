@@ -14,7 +14,23 @@ spec:
     singular: ec2instance
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - description: The current state of the EC2 instance
+      jsonPath: .status.state
+      name: State
+      type: string
+    - description: The AWS Instance ID
+      jsonPath: .status.instanceID
+      name: Instance ID
+      type: string
+    - description: The Public IP address
+      jsonPath: .status.publicIP
+      name: Public IP
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
         description: Ec2Instance is the Schema for the ec2instances API

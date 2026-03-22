@@ -3,7 +3,7 @@ controllerManager:
   replicas: 1
   container:
     image:
-      repository: controller
+      repository: docker.io/karanwebdev/ec2-kubernetes-operator
       tag: latest
     imagePullPolicy: IfNotPresent
     args:
@@ -41,6 +41,27 @@ controllerManager:
   terminationGracePeriodSeconds: 10
   serviceAccountName: operator-controller-manager
 
+# [DASHBOARD]: Web UI Dashboard Configurations
+dashboard:
+  enable: true
+  replicas: 1
+  image:
+    repository: docker.io/karanwebdev/ec2-dashboard
+    tag: latest
+  imagePullPolicy: IfNotPresent
+  port: 3000
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  serviceAccountName: operator-dashboard
+  service:
+    type: ClusterIP
+    port: 3000
+
 # [RBAC]: To enable RBAC (Permissions) configurations
 rbac:
   enable: true
@@ -64,10 +85,6 @@ crd:
 metrics:
   enable: true
 
-# [PROMETHEUS]: To enable a ServiceMonitor to export metrics to Prometheus set true
-prometheus:
-  enable: false
-
 # [CERT-MANAGER]: To enable cert-manager injection to webhooks set true
 certmanager:
   enable: false
@@ -75,3 +92,75 @@ certmanager:
 # [NETWORK POLICIES]: To enable NetworkPolicies set true
 networkPolicy:
   enable: false
+
+# [OBSERVABILITY]: Unified Stack Configuration
+prometheus:
+  enabled: true
+  server:
+    persistentVolume:
+      enabled: false
+    service:
+      type: NodePort
+    resources:
+      limits: { cpu: 500m, memory: 512Mi }
+      requests: { cpu: 100m, memory: 128Mi }
+
+grafana:
+  enabled: true
+  service:
+    type: NodePort
+  persistence:
+    enabled: false
+  adminPassword: admin
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-server
+        access: proxy
+        isDefault: true
+      - name: Jaeger
+        type: jaeger
+        url: http://jaeger-query:16686
+        access: proxy
+
+jaeger:
+  enabled: true
+  collector:
+    enabled: false
+  query:
+    enabled: false
+    service:
+      type: NodePort
+      clusterIP: ""
+  agent:
+    enabled: false
+  allInOne:
+    enabled: true
+    image: jaegertracing/all-in-one
+    tag: 1.60.0
+    service:
+      type: NodePort
+
+opencost:
+  enabled: true
+  service:
+    type: NodePort
+  opencost:
+    prometheus:
+      internal:
+        enabled: false
+      external:
+        url: http://prometheus-server
+
+# [PERSONALIZATION]: UI Settings
+uiSettings:
+  name: "User Name"
+  profession: "Project Lead"
+  team: "Cloud Operations"

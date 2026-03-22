@@ -18,15 +18,41 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"github.com/prometheus/client_golang/prometheus"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
+
+var (
+	managedInstances = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_managed_instances_total",
+			Help: "Total number of EC2 instances managed by the operator",
+		},
+	)
+	ReconciliationTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "ec2_operator_reconciliation_total",
+			Help: "Total number of reconciliation attempts",
+		},
+	)
+)
+
+func init() {
+	// Register custom metrics with the global prometheus registry
+	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal)
+}
 
 // Ec2InstanceReconciler reconciles a Ec2Instance object
 type Ec2InstanceReconciler struct {
@@ -40,144 +66,157 @@ type Ec2InstanceReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-//
-// After updating the status of the resource (e.g., with r.Status().Update), the Kubernetes API server
-// will emit an update event for the resource. This event will be picked up by the controller-runtime
-// and will cause the Reconcile function to be called again for the same resource. This is why, after
-// updating the status, the reconciler is called again: it is a result of the Kubernetes watch mechanism
-// and ensures that the controller can observe and react to any changes, including those it made itself.
-// This pattern is common in Kubernetes controllers to ensure eventual consistency and to handle
-// situations where the status update may not have been fully applied or observed yet.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
 func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	l := logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	l.Info("===RECONCILE LOOP STARTED ===", "namespace", req.Namespace, "name", req.Name)
+	tracer := otel.GetTracerProvider().Tracer("ec2-operator")
+	ctx, span := tracer.Start(ctx, "Reconcile", trace.WithAttributes(
+		attribute.String("instance.name", req.Name),
+		attribute.String("instance.namespace", req.Namespace),
+	))
+	defer span.End()
 
-	// create a new instance of the Ec2Instance struct to hold the data retrieved from the API.
-	// This struct will be populated with the current state of the EC2Instance resource specified
-	// by the request.
+	log.Info("=== RECONCILE LOOP STARTED ===", "namespace", req.Namespace, "name", req.Name)
+	ReconciliationTotal.Inc()
+
 	ec2Instance := &computev1.Ec2Instance{}
-	// retrieve the resource from the kubernetes API server using the
-	// provided request's Namespace and Name
 	if err := r.Get(ctx, req.NamespacedName, ec2Instance); err != nil {
 		if errors.IsNotFound(err) {
-			l.Info("Instance Deleted. No need to reconcile")
+			log.Info("Instance resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
-		// kubernetes will retry with backoff
+		log.Error(err, "Failed to get Ec2Instance")
 		return ctrl.Result{}, err
 	}
 
-	// check if deletionTimestamp is not zero
+	// Handle Deletion
 	if !ec2Instance.DeletionTimestamp.IsZero() {
-		l.Info("Has deletionTimestamp, Instance is being deleted")
+		log.Info("Instance is being deleted")
 		_, err := deleteEc2Instance(ctx, ec2Instance)
 		if err != nil {
-			l.Error(err, "Failed to delete EC2 instance")
-			// Kubernetes will retry with backoff
+			log.Error(err, "Failed to delete EC2 instance")
 			return ctrl.Result{Requeue: true}, err
 		}
 
-		// Remove the finalizer
 		controllerutil.RemoveFinalizer(ec2Instance, "ec2instance.compute.cloud.com")
 		if err := r.Update(ctx, ec2Instance); err != nil {
-			l.Error(err, "Failed to remove finalizer")
-			// Kubernetes will retry with backoff
+			log.Error(err, "Failed to remove finalizer")
 			return ctrl.Result{Requeue: true}, err
 		}
-		// at this point, the instance state is terminated and the finalizer is removed
 		return ctrl.Result{}, nil
 	}
 
-	// if errors.IsNotFound(err) {
-	// 	// Object was deleted
-	// 	fmt.Println("Ran kubectl delete ec2instance")
-	// 	l.Info("Got a delete request for the instance. Will delete the instance from AWS")
-	// 	// Any cleanup logic here (though you can't access the object anymore)
-	// 	return ctrl.Result{}, nil
-	// }
-
-	// Check if we already have an instance ID in status
-	if ec2Instance.Status.InstanceID != "" {
-		l.Info("Requested object is already exists in kubernetes. Not creating a new instance", "instanceID", ec2Instance.Status.InstanceID)
-
-		// Drift detection mechanism
-		instanceExist, instanceState, err := checkEC2InstanceExists(ctx, ec2Instance.Status.InstanceID, ec2Instance)
-		if err != nil {
-			ec2Instance.Status.InstanceID = ""
-			ec2Instance.Status.State = ""
-			ec2Instance.Status.PublicIP = ""
-			ec2Instance.Status.PrivateIP = ""
-			ec2Instance.Status.PublicDNS = ""
-			ec2Instance.Status.PrivateDNS = ""
-			return ctrl.Result{Requeue: true}, r.Status().Update(ctx, ec2Instance)
-		}
-		if !instanceExist {
-			l.Info("Instance does not exist or is not running", "instanceID", ec2Instance.Status.InstanceID)
-			ec2Instance.Status.State = "Unknown"
-			ec2Instance.Status.PublicIP = ""
-			if err := r.Status().Update(ctx, ec2Instance); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, nil
-		}
-		if instanceExist && ec2Instance.Status.State == "Unknown" {
-			l.Info("Found a running Instance", "instanceID", ec2Instance.Status.InstanceID)
-			ec2Instance.Status.State = *instanceState.InstanceId
-			ec2Instance.Status.PublicIP = *instanceState.PublicIpAddress
-			if err := r.Status().Update(ctx, ec2Instance); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, nil
-		}
-
-		return ctrl.Result{}, nil
-	}
-
-	l.Info("Creating new Instance")
-	// Check if already contains finalizer, add it otherwise
+	// Add Finalizer if missing
 	if !controllerutil.ContainsFinalizer(ec2Instance, "ec2instance.compute.cloud.com") {
-		l.Info(" === ABOUT TO ADD FINALIZER ===")
 		controllerutil.AddFinalizer(ec2Instance, "ec2instance.compute.cloud.com")
 		if err := r.Update(ctx, ec2Instance); err != nil {
-			l.Error(err, "Failed to add finalizer")
+			log.Error(err, "Failed to add finalizer")
 			return ctrl.Result{Requeue: true}, err
 		}
-		l.Info(" === FINALIZER ADDED - Returning to trigger new reconcile loop cleanly ===")
 		return ctrl.Result{}, nil
 	}
 
-	// create a new Instance
-	l.Info(" === CONTINUING WITH EC2 INSTANCE CREATION IN CURRENT RECONCILE LOOP ===")
+	// If instance already exists in status, check its state in AWS (Drift Detection)
+	if ec2Instance.Status.InstanceID != "" {
+		exists, instance, err := checkEC2InstanceExists(ctx, ec2Instance.Status.InstanceID, ec2Instance)
+		if err != nil {
+			log.Error(err, "Failed to check EC2 instance in AWS")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
 
-	createdInstanceInfo, err := createEc2Instance(ec2Instance)
+		if !exists {
+			log.Info("Instance missing in AWS, marking as terminated", "instanceID", ec2Instance.Status.InstanceID)
+			ec2Instance.Status.State = "terminated"
+			ec2Instance.Status.PublicIP = ""
+			ec2Instance.Status.PublicDNS = ""
+			managedInstances.Dec()
+			if err := r.Status().Update(ctx, ec2Instance); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		}
+
+		// Update status from AWS state
+		newState := string(instance.State.Name)
+		newIP := ""
+		if instance.PublicIpAddress != nil {
+			newIP = *instance.PublicIpAddress
+		}
+		newDNS := ""
+		if instance.PublicDnsName != nil {
+			newDNS = *instance.PublicDnsName
+		}
+		newPrivIP := ""
+		if instance.PrivateIpAddress != nil {
+			newPrivIP = *instance.PrivateIpAddress
+		}
+		newPrivDNS := ""
+		if instance.PrivateDnsName != nil {
+			newPrivDNS = *instance.PrivateDnsName
+		}
+
+		if ec2Instance.Status.State != newState || ec2Instance.Status.PublicIP != newIP {
+			log.Info("Drift detected, updating status", "oldState", ec2Instance.Status.State, "newState", newState)
+
+			// Update metrics if state changed to/from running
+			if ec2Instance.Status.State != "running" && newState == "running" {
+				managedInstances.Inc()
+			} else if ec2Instance.Status.State == "running" && newState != "running" {
+				managedInstances.Dec()
+			}
+
+			ec2Instance.Status.State = newState
+			ec2Instance.Status.PublicIP = newIP
+			ec2Instance.Status.PublicDNS = newDNS
+			ec2Instance.Status.PrivateIP = newPrivIP
+			ec2Instance.Status.PrivateDNS = newPrivDNS
+
+			if err := r.Status().Update(ctx, ec2Instance); err != nil {
+				log.Error(err, "Failed to update Ec2Instance status")
+				return ctrl.Result{}, err
+			}
+		}
+
+		// Update metrics
+		if newState == "running" {
+			managedInstances.Inc()
+		} else if newState == "terminated" {
+			managedInstances.Dec()
+		}
+
+		// Periodic resync for drift detection
+		if newState != "terminated" {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Create new instance
+	log.Info("Creating new EC2 Instance in AWS", "name", ec2Instance.Name)
+	createdInfo, err := createEc2Instance(ctx, ec2Instance)
 	if err != nil {
-		l.Error(err, "Failed to create EC2 Instance")
+		log.Error(err, "Failed to create EC2 Instance")
 		return ctrl.Result{}, err
 	}
 
-	l.Info("=== ABOUT TO UPDATE STATUS - This will trigger reconciler loop again ===",
-		"instanceID", createdInstanceInfo.InstanceID,
-		"state", createdInstanceInfo.State)
+	ec2Instance.Status.InstanceID = createdInfo.InstanceID
+	ec2Instance.Status.State = createdInfo.State
+	ec2Instance.Status.PublicIP = createdInfo.PublicIP
+	ec2Instance.Status.PrivateIP = createdInfo.PrivateIP
+	ec2Instance.Status.PublicDNS = createdInfo.PublicDNS
+	ec2Instance.Status.PrivateDNS = createdInfo.PrivateDNS
 
-	ec2Instance.Status.InstanceID = createdInstanceInfo.InstanceID
-	ec2Instance.Status.State = createdInstanceInfo.State
-	ec2Instance.Status.PublicIP = createdInstanceInfo.PublicIP
-	ec2Instance.Status.PrivateIP = createdInstanceInfo.PrivateIP
-	ec2Instance.Status.PublicDNS = createdInstanceInfo.PublicDNS
-	ec2Instance.Status.PrivateDNS = createdInstanceInfo.PrivateDNS
-
-	err = r.Status().Update(ctx, ec2Instance)
-	if err != nil {
-		l.Error(err, "Failed to update status")
+	if err := r.Status().Update(ctx, ec2Instance); err != nil {
+		log.Error(err, "Failed to update status after creation")
 		return ctrl.Result{}, err
 	}
-	l.Info(" === STATUS UPDATED - Reconcile loop will be triggered again ===")
 
-	return ctrl.Result{}, nil
+	log.Info("Successfully created instance and updated status", "instanceID", createdInfo.InstanceID)
+	// If it's already running (unlikely immediately, but for consistency)
+	if createdInfo.State == "running" {
+		managedInstances.Inc()
+	}
+	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -1,3 +1,11 @@
+# Stage 1: Build React App
+FROM node:22-alpine AS frontend-builder
+WORKDIR /app
+COPY web/package.json web/package-lock.json* ./
+RUN npm install
+COPY web/ ./
+RUN npm run build
+
 # Build the manager binary
 FROM golang:1.25 AS builder
 ARG TARGETOS
@@ -13,6 +21,8 @@ RUN go mod download
 
 # Copy the Go source (relies on .dockerignore to filter)
 COPY . .
+# Copy the built React app into the expected embed location
+COPY --from=frontend-builder /app/dist ./web/dist
 
 # Build
 # the GOARCH has no default value to allow the binary to be built according to the host where the command

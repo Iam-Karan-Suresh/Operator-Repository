@@ -1,0 +1,16 @@
+apiVersion: compute.cloud.com/v1
+kind: Ec2Instance
+metadata:
+  name: prod-web-server
+  namespace: default
+spec:
+  instanceType: t3.micro # Change to t3.micro for cost-safety in testing
+  amiId: ami-02777684819ca2214
+  region: us-east-1
+  storage:
+    rootVolume:
+      size: 10
+      type: gp3
+  tags:
+    environment: production
+    team: frontend

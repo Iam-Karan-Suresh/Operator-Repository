@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"context"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -36,8 +37,11 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	operatorrepo "github.com/Iam-Karan-Suresh/operator-repo"
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/controller"
+	"github.com/Iam-Karan-Suresh/operator-repo/internal/dashboard"
+	"github.com/Iam-Karan-Suresh/operator-repo/internal/telemetry"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -62,7 +66,10 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var enableDashboard bool
+	var dashboardPort string
 	var tlsOpts []func(*tls.Config)
+	var otlpEndpoint string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -71,6 +78,8 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
+	flag.BoolVar(&enableDashboard, "enable-dashboard", true, "Enable the web dashboard server.")
+	flag.StringVar(&dashboardPort, "dashboard-port", ":3000", "The address the dashboard endpoint binds to.")
 	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
 	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
 	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
@@ -78,6 +87,7 @@ func main() {
 		"The directory that contains the metrics server certificate.")
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+	flag.StringVar(&otlpEndpoint, "otlp-endpoint", "localhost:4317", "The OTLP collector endpoint for traces.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	opts := zap.Options{
@@ -87,6 +97,20 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// Initialize OpenTelemetry
+	if otlpEndpoint != "" {
+		tp, err := telemetry.InitTracer(context.Background(), "ec2-operator", otlpEndpoint)
+		if err != nil {
+			setupLog.Error(err, "unable to initialize tracer")
+		} else {
+			defer func() {
+				if err := tp.Shutdown(context.Background()); err != nil {
+					setupLog.Error(err, "error shutting down tracer provider")
+				}
+			}()
+		}
+	}
 
 	// Create watcher for webhook certificates
 	// webhookCertWatcher is a pointer to a CertWatcher, which can be used to watch for changes
@@ -208,6 +232,25 @@ func main() {
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
+	}
+
+	if enableDashboard {
+		setupLog.Info("starting dashboard server", "port", dashboardPort)
+		staticFS, err := operatorrepo.GetStaticFS()
+		if err != nil {
+			setupLog.Error(err, "unable to get static fs for dashboard")
+			os.Exit(1)
+		}
+		dashServer := dashboard.NewServer(mgr.GetClient(), dashboardPort)
+		// We use a custom wrapper or just call StartWithFS if we want to bypass the default Start
+		// But since mgr.Add(dashServer) calls dashServer.Start(ctx), we need a way to inject the FS.
+		// Let's add a SetStaticFS method or just use a different constructor.
+		dashServer.SetStaticFS(staticFS)
+
+		if err := mgr.Add(dashServer); err != nil {
+			setupLog.Error(err, "unable to add dashboard server to manager")
+			os.Exit(1)
+		}
 	}
 
 	setupLog.Info("starting manager")

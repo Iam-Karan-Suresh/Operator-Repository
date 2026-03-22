@@ -1,0 +1,15 @@
+dependencies:
+- name: prometheus
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 25.30.2
+- name: grafana
+  repository: https://grafana.github.io/helm-charts
+  version: 7.3.12
+- name: jaeger
+  repository: https://jaegertracing.github.io/helm-charts
+  version: 0.71.18
+- name: opencost
+  repository: https://opencost.github.io/opencost-helm-chart
+  version: 1.43.2
+digest: sha256:dc73bc10cc7b494c41332e1fcf8971eaee6428f044a2c7e944ba0e4e2b055093
+generated: "2026-03-22T23:30:27.172559223+05:30"

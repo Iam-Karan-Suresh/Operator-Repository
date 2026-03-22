@@ -1,0 +1,30 @@
+# Stage 1: Build React App
+FROM node:22-alpine AS frontend-builder
+WORKDIR /app
+COPY web/package.json web/package-lock.json* ./
+RUN npm install
+COPY web/ ./
+RUN npm run build
+
+# Stage 2: Build Go API Server with embedded assets
+FROM golang:1.25 AS builder
+WORKDIR /workspace
+COPY go.mod go.mod
+COPY go.sum go.sum
+RUN go mod download
+
+# Copy the rest of the source code
+COPY . .
+# Copy the built React app into the expected embed location
+COPY --from=frontend-builder /app/dist ./web/dist
+
+# Build the dashboard binary
+RUN CGO_ENABLED=0 GOOS=linux go build -a -o dashboard-server cmd/dashboard/main.go
+
+# Stage 3: Minimal Distroless Image
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+COPY --from=builder /workspace/dashboard-server .
+USER 65532:65532
+
+ENTRYPOINT ["/dashboard-server"]
