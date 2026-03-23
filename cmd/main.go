@@ -235,7 +235,7 @@ func main() {
 	if err := (&controller.Ec2InstanceReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("ec2instance-controller"),
+		Recorder: mgr.GetEventRecorderFor("ec2instance-controller"), //nolint:staticcheck // GetEventRecorder returns incompatible interface type
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Ec2Instance")
 		os.Exit(1)
