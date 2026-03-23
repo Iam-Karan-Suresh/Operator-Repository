@@ -4,7 +4,7 @@ WORKDIR /app
 COPY web/package.json web/package-lock.json* ./
 RUN npm install
 COPY web/ ./
-RUN echo "building v1.0.3-v2" && npm run build
+RUN echo "building v1.0.4" && npm run build
 
 # Build the manager binary
 FROM golang:1.25 AS builder
