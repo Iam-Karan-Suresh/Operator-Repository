@@ -51,6 +51,13 @@ kubectl port-forward svc/operator-dashboard 3000:3000
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+for logs of operator
+
+```bash
+kubectl logs -n operator-system operator-controller-manager-6b458f9767-t7xmv -c manager
+
+```
+
 ## 📊 Features
 - **Declarative AWS EC2 Management**: Provision instances via `Ec2Instance` CRDs.
 - **Real-time Visualization**: Glassmorphism UI with Server-Sent Events (SSE).

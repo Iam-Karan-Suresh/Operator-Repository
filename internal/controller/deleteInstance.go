@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
@@ -23,7 +24,10 @@ func deleteEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) 
 
 	log.Info("Deleting EC2 instance", "instanceID", ec2Instance.Status.InstanceID)
 
-	ec2Client := awsClient(ec2Instance.Spec.Region)
+	ec2Client, err := awsClient(ctx, ec2Instance.Spec.Region)
+	if err != nil {
+		return false, fmt.Errorf("failed to initialize AWS client: %w", err)
+	}
 
 	// Terminate the instance
 	terminateResult, err := ec2Client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{

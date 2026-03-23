@@ -5,7 +5,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: operator
     control-plane: controller-manager
-  name: ec2operator-system
+  name: operator-system
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -22,7 +22,23 @@ spec:
     singular: ec2instance
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - description: The current state of the EC2 instance
+      jsonPath: .status.state
+      name: State
+      type: string
+    - description: The AWS Instance ID
+      jsonPath: .status.instanceID
+      name: Instance ID
+      type: string
+    - description: The Public IP address
+      jsonPath: .status.publicIP
+      name: Public IP
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
         description: Ec2Instance is the Schema for the ec2instances API
@@ -145,7 +161,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: operator
   name: operator-controller-manager
-  namespace: ec2operator-system
+  namespace: operator-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -154,7 +170,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: operator
   name: operator-leader-election-role
-  namespace: ec2operator-system
+  namespace: operator-system
 rules:
 - apiGroups:
   - ""
@@ -265,6 +281,16 @@ metadata:
   name: operator-manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
   - compute.cloud.com
   resources:
   - ec2instances
@@ -326,7 +352,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: operator
   name: operator-leader-election-rolebinding
-  namespace: ec2operator-system
+  namespace: operator-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -334,7 +360,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: operator-controller-manager
-  namespace: ec2operator-system
+  namespace: operator-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -350,7 +376,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: operator-controller-manager
-  namespace: ec2operator-system
+  namespace: operator-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -363,7 +389,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: operator-controller-manager
-  namespace: ec2operator-system
+  namespace: operator-system
 ---
 apiVersion: v1
 kind: Service
@@ -373,7 +399,7 @@ metadata:
     app.kubernetes.io/name: operator
     control-plane: controller-manager
   name: operator-controller-manager-metrics-service
-  namespace: ec2operator-system
+  namespace: operator-system
 spec:
   ports:
   - name: https
@@ -392,7 +418,7 @@ metadata:
     app.kubernetes.io/name: operator
     control-plane: controller-manager
   name: operator-controller-manager
-  namespace: ec2operator-system
+  namespace: operator-system
 spec:
   replicas: 1
   selector:
@@ -414,25 +440,21 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /manager
-        image: docker.io/karanwebdev/ec2-kubernetes-operator:latest
-        env:
-        - name: AWS_ACCESS_KEY_ID
-          valueFrom:
-            secretKeyRef:
-              name: aws-credentials
-              key: AWS_ACCESS_KEY_ID
-        - name: AWS_SECRET_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: aws-credentials
-              key: AWS_SECRET_ACCESS_KEY
-        - name: AWS_REGION
-          valueFrom:
-            secretKeyRef:
-              name: aws-credentials
-              key: AWS_REGION
+        image: ghcr.io/iam-karan-suresh/ec2-operator-manager:v1.0.3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
         name: manager
         ports: []
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
         resources:
           limits:
             cpu: 500m
@@ -454,14 +476,3 @@ spec:
       serviceAccountName: operator-controller-manager
       terminationGracePeriodSeconds: 10
       volumes: []
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: aws-credentials
-  namespace: ec2operator-system
-type: Opaque
-data:
-  AWS_ACCESS_KEY_ID: AKIA57624245242424242424
-  AWS_SECRET_ACCESS_KEY: AKIA57624245242424242424
-  AWS_REGION: us-east-1

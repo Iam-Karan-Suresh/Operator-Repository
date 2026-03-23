@@ -17,10 +17,10 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
-	"context"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -43,6 +43,7 @@ import (
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/dashboard"
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/telemetry"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	// +kubebuilder:scaffold:imports
 )
@@ -222,17 +223,19 @@ func main() {
 	}
 
 	// Add indexer for events to allow filtering by involvedObject.name
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Event{}, "involvedObject.name", func(rawObj client.Object) []string {
-		event := rawObj.(*corev1.Event)
-		return []string{event.InvolvedObject.Name}
-	}); err != nil {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Event{},
+		"involvedObject.name", func(rawObj client.Object) []string {
+			event := rawObj.(*corev1.Event)
+			return []string{event.InvolvedObject.Name}
+		}); err != nil {
 		setupLog.Error(err, "unable to set up field indexer for events")
 		os.Exit(1)
 	}
 
 	if err := (&controller.Ec2InstanceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("ec2instance-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Ec2Instance")
 		os.Exit(1)
@@ -262,7 +265,14 @@ func main() {
 			setupLog.Error(err, "unable to get static fs for dashboard")
 			os.Exit(1)
 		}
-		dashServer := dashboard.NewServer(mgr.GetClient(), dashboardPort)
+
+		clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			setupLog.Error(err, "unable to create kubernetes clientset")
+			os.Exit(1)
+		}
+
+		dashServer := dashboard.NewServer(mgr.GetClient(), clientset, dashboardPort)
 		// We use a custom wrapper or just call StartWithFS if we want to bypass the default Start
 		// But since mgr.Add(dashServer) calls dashServer.Start(ctx), we need a way to inject the FS.
 		// Let's add a SetStaticFS method or just use a different constructor.

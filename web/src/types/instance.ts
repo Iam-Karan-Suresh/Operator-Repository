@@ -29,3 +29,10 @@ export interface EventResponse {
   age: string;
   object: string;
 }
+
+export interface LogResponse {
+  timestamp: string;
+  level: string;
+  message: string;
+  raw: string;
+}

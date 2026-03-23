@@ -7,11 +7,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
-// function that returning ec2 client and error
-func awsClient(region string) *ec2.Client {
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+// awsClient returns an EC2 client for the specified region
+func awsClient(ctx context.Context, region string) (*ec2.Client, error) {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return ec2.NewFromConfig(cfg)
+	return ec2.NewFromConfig(cfg), nil
 }

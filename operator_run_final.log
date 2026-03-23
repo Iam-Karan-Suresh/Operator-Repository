@@ -1,0 +1,5 @@
+2026-03-23T12:58:59+05:30	ERROR	setup	unable to start manager	{"error": "error listening on :8081: listen tcp :8081: bind: address already in use"}
+main.main
+	/home/roronoa-zoro/Projects/Operator-Repository/cmd/main.go:221
+runtime.main
+	/home/roronoa-zoro/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.3.linux-amd64/src/runtime/proc.go:285

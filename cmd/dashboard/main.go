@@ -4,15 +4,18 @@ import (
 	"flag"
 	"os"
 
-	operatorrepo "github.com/Iam-Karan-Suresh/operator-repo"
-	"github.com/Iam-Karan-Suresh/operator-repo/api/v1"
-	"github.com/Iam-Karan-Suresh/operator-repo/internal/dashboard"
+	"k8s.io/client-go/kubernetes"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	operatorrepo "github.com/Iam-Karan-Suresh/operator-repo"
+	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
+	"github.com/Iam-Karan-Suresh/operator-repo/internal/dashboard"
 )
 
 var (
@@ -22,7 +25,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(v1.AddToScheme(scheme))
+	utilruntime.Must(computev1.AddToScheme(scheme))
 }
 
 func main() {
@@ -46,7 +49,13 @@ func main() {
 	}
 
 	// Setup Server
-	server := dashboard.NewServer(k8sClient, port)
+	clientset, err := kubernetes.NewForConfig(config) // Changed mgr.GetConfig() to config
+	if err != nil {
+		setupLog.Error(err, "unable to create kubernetes clientset")
+		os.Exit(1)
+	}
+
+	dashServer := dashboard.NewServer(k8sClient, clientset, port) // Changed mgr.GetClient() to k8sClient and port variable
 
 	// Extract the embedded filesystem so it can be served
 	subFS, err := operatorrepo.GetStaticFS()
@@ -72,7 +81,7 @@ func main() {
 		// but since `server.Start()` creates its own Mux internally and blocks, we will update `server.go` to accept the FS.
 	}()
 
-	err = server.StartWithFS(ctx, subFS)
+	err = dashServer.StartWithFS(ctx, subFS)
 	if err != nil {
 		setupLog.Error(err, "unable to start dashboard server")
 		os.Exit(1)

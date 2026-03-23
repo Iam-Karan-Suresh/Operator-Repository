@@ -21,17 +21,24 @@ import (
 	"time"
 
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+)
+
+const (
+	StateRunning    = "running"
+	StateTerminated = "terminated"
 )
 
 var (
@@ -47,22 +54,31 @@ var (
 			Help: "Total number of reconciliation attempts",
 		},
 	)
+	ApiLatency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "ec2_operator_api_latency_seconds",
+			Help:    "Latency of AWS API calls",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
 )
 
 func init() {
 	// Register custom metrics with the global prometheus registry
-	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal)
+	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal, ApiLatency)
 }
 
 // Ec2InstanceReconciler reconciles a Ec2Instance object
 type Ec2InstanceReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=compute.cloud.com,resources=ec2instances,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=compute.cloud.com,resources=ec2instances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=compute.cloud.com,resources=ec2instances/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -126,7 +142,7 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 		if !exists {
 			log.Info("Instance missing in AWS, marking as terminated", "instanceID", ec2Instance.Status.InstanceID)
-			ec2Instance.Status.State = "terminated"
+			ec2Instance.Status.State = StateTerminated
 			ec2Instance.Status.PublicIP = ""
 			ec2Instance.Status.PublicDNS = ""
 			managedInstances.Dec()
@@ -159,9 +175,9 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			log.Info("Drift detected, updating status", "oldState", ec2Instance.Status.State, "newState", newState)
 
 			// Update metrics if state changed to/from running
-			if ec2Instance.Status.State != "running" && newState == "running" {
+			if ec2Instance.Status.State != StateRunning && newState == StateRunning {
 				managedInstances.Inc()
-			} else if ec2Instance.Status.State == "running" && newState != "running" {
+			} else if ec2Instance.Status.State == StateRunning && newState != StateRunning {
 				managedInstances.Dec()
 			}
 
@@ -178,10 +194,13 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 
 		// Update metrics
-		if newState == "running" {
-			managedInstances.Inc()
-		} else if newState == "terminated" {
-			managedInstances.Dec()
+		switch newState {
+		case StateRunning:
+			log.Info("Instance reached running state", "name", ec2Instance.Name)
+			r.Recorder.Event(ec2Instance, corev1.EventTypeNormal, "Running", "EC2 Instance is now running")
+		case StateTerminated:
+			log.Info("Instance reached terminated state", "name", ec2Instance.Name)
+			r.Recorder.Event(ec2Instance, corev1.EventTypeNormal, "Terminated", "EC2 Instance has been terminated")
 		}
 
 		// Periodic resync for drift detection
@@ -193,10 +212,13 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Create new instance
 	log.Info("Creating new EC2 Instance in AWS", "name", ec2Instance.Name)
+	startTime := time.Now()
 	createdInfo, err := createEc2Instance(ctx, ec2Instance)
+	ApiLatency.Observe(time.Since(startTime).Seconds())
 	if err != nil {
 		log.Error(err, "Failed to create EC2 Instance")
-		return ctrl.Result{}, err
+		r.Recorder.Event(ec2Instance, corev1.EventTypeWarning, "CreationFailed", err.Error())
+		return ctrl.Result{RequeueAfter: 1 * time.Minute}, err
 	}
 
 	ec2Instance.Status.InstanceID = createdInfo.InstanceID
