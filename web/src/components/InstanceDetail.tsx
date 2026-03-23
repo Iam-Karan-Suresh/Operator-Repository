@@ -1,8 +1,23 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { InstanceResponse, EventResponse, LogResponse } from '../types/instance';
 import { StatusBadge } from './StatusBadge';
 import { LifecycleTimeline } from './LifecycleTimeline';
-import { ArrowLeft, Cpu, Terminal, Key, Shield, Network, RefreshCw, X, AlertCircle } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  Server, 
+  Cpu, 
+  Terminal, 
+  Key, 
+  Shield, 
+  Network, 
+  RefreshCw, 
+  MoreVertical, 
+  FileJson, 
+  Copy, 
+  TerminalSquare, 
+  X, 
+  AlertCircle 
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '../utils';
 import { fetchInstanceEvents, fetchInstanceLogs } from '../api/client';
@@ -55,6 +70,7 @@ export function InstanceDetail({ instance, onBack, onRefresh, refreshing }: Inst
       }
     }
   }, [showLogs, activeTab, loadEvents, loadLogs]);
+
   return (
     <div className="space-y-6">
       <div className="bg-card/30 border border-border p-6 rounded-2xl mb-8 shadow-xl backdrop-blur-md">
@@ -104,6 +120,32 @@ export function InstanceDetail({ instance, onBack, onRefresh, refreshing }: Inst
               <Terminal size={18} />
               <span>{showLogs ? 'Hide Instance Logs' : 'View Activity Logs'}</span>
             </button>
+
+            <div className="relative group/actions">
+              <button className="p-3 bg-background hover:bg-muted border border-border rounded-xl text-muted-foreground hover:text-foreground transition-all flex items-center justify-center shadow-sm">
+                <MoreVertical className="w-5 h-5" />
+              </button>
+              <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-2xl opacity-0 invisible group-hover/actions:opacity-100 group-hover/actions:visible transition-all duration-200 z-50 overflow-hidden backdrop-blur-xl">
+                <button 
+                  onClick={() => navigator.clipboard.writeText(JSON.stringify(instance, null, 2))}
+                  className="w-full flex items-center px-4 py-3 text-sm hover:bg-primary/10 text-muted-foreground hover:text-foreground transition-colors text-left"
+                >
+                  <FileJson className="w-4 h-4 mr-3 text-primary" /> Copy Raw JSON
+                </button>
+                <button 
+                  onClick={() => navigator.clipboard.writeText(instance.instanceID || '')}
+                  className="w-full flex items-center px-4 py-3 text-sm hover:bg-primary/10 text-muted-foreground hover:text-foreground transition-colors text-left border-t border-border/50"
+                >
+                  <Copy className="w-4 h-4 mr-3 text-primary" /> Copy Instance ID
+                </button>
+                <button 
+                  onClick={() => alert(`Connect via SSH using:\nssh -i "key.pem" ec2-user@${instance.publicDNS || instance.publicIP || '[pending]'}`)}
+                  className="w-full flex items-center px-4 py-3 text-sm hover:bg-primary/10 text-primary transition-colors text-left border-t border-border/50"
+                >
+                  <TerminalSquare className="w-4 h-4 mr-3" /> Connect (SSH)
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -228,7 +270,7 @@ export function InstanceDetail({ instance, onBack, onRefresh, refreshing }: Inst
                     </div>
                   ) : (
                     <div className="divide-y divide-border/30">
-                      {events.map((event, idx) => (
+                      {events.map((event: EventResponse, idx: number) => (
                         <div key={idx} className="p-3 hover:bg-background/40 transition-colors flex gap-4">
                           <div className="flex-shrink-0 w-24 text-muted-foreground/60 tabular-nums">
                             {event.age}
@@ -260,7 +302,7 @@ export function InstanceDetail({ instance, onBack, onRefresh, refreshing }: Inst
                     </div>
                   ) : (
                     <div className="bg-background/80 p-4 font-mono text-xs whitespace-pre-wrap rounded-b-xl leading-relaxed text-muted-foreground break-all">
-                      {logs.map((log, idx) => (
+                      {logs.map((log: LogResponse, idx: number) => (
                         <div key={idx} className="mb-2">
                           <span className="text-primary/70 mr-2">[{log.timestamp || 'sys'}]</span>
                           <span className={cn(

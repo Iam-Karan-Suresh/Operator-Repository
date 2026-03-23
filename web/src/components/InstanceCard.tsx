@@ -1,3 +1,4 @@
+import React from 'react';
 import type { InstanceResponse } from '../types/instance';
 import { StatusBadge } from './StatusBadge';
 import { Server, Cpu, HardDrive, Globe, Clock, ArrowRight } from 'lucide-react';
@@ -21,12 +22,15 @@ export function InstanceCard({ instance, onClick, selected, onToggleSelect }: In
 
       {/* Selection Checkbox */}
       <div className="absolute top-4 right-4 z-20" onClick={e => e.stopPropagation()}>
-        <input 
-          type="checkbox" 
-          checked={selected}
-          onChange={onToggleSelect}
-          className="w-4 h-4 rounded border-border bg-background/50 accent-primary cursor-pointer"
-        />
+          <input 
+            type="checkbox" 
+            checked={selected}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              e.stopPropagation();
+              onToggleSelect(e);
+            }}
+            className="w-4 h-4 rounded border-border text-primary focus:ring-primary/50 transition-all cursor-pointer" 
+          />
       </div>
 
       <div className="flex justify-between items-start mb-4 relative z-10 pr-8">
@@ -67,7 +71,7 @@ export function InstanceCard({ instance, onClick, selected, onToggleSelect }: In
         <span>Namespace: {instance.namespace}</span>
         <div className="flex items-center space-x-3">
           <button 
-            onClick={(e) => { e.stopPropagation(); onClick(); /* Wait, I need a way to open it in Detail view with logs open */ }}
+            onClick={(e) => { e.stopPropagation(); onClick(); }}
             className="flex items-center hover:text-primary transition-colors py-1 px-2 rounded-md hover:bg-primary/10"
           >
             <ArrowRight size={14} className="mr-1" /> Details

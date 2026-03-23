@@ -88,6 +88,9 @@ func (s *Server) StartWithFS(ctx context.Context, f fs.FS) error {
 	// API Routes
 	mux.HandleFunc("/api/instances", s.handleListInstances)
 	mux.HandleFunc("/api/instances/", s.handleGetInstanceOrWatch) // prefixes with GET /api/instances/{name} or /api/instances/watch
+	// Note: Standard net/http multiplexer doesn't support named parameters like {namespace} easily 
+	// without a router library or custom logic. For this embedded dashboard, we use simple prefix matching.
+	mux.HandleFunc("/api/logs/", s.handleInstanceLogsLegacy)      // Compatibility route
 	mux.HandleFunc("GET /api/instances/{namespace}/{name}/logs", s.handleInstanceLogs)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("POST /api/settings", s.handleUpdateSettings)
@@ -166,8 +169,8 @@ func (s *Server) handleListInstances(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := make([]InstanceResponse, 0, len(instances.Items))
-	for _, inst := range instances.Items {
-		response = append(response, mapToInstanceResponse(&inst))
+	for i := range instances.Items {
+		response = append(response, mapToInstanceResponse(&instances.Items[i]))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -200,15 +203,23 @@ func (s *Server) handleGetInstanceOrWatch(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// For simplicity, we assume default namespace in the dashboard, or we could pass ?namespace=foo
-	namespace := r.URL.Query().Get("namespace")
-	if namespace == "" {
-		namespace = "default" // fallback
+	// Parsing /api/instances/{namespace}/{name}
+	parts := strings.Split(pathName, "/")
+	var ns, name string
+	if len(parts) >= 2 {
+		ns = parts[0]
+		name = parts[1]
+	} else {
+		ns = r.URL.Query().Get("namespace")
+		if ns == "" {
+			ns = "default"
+		}
+		name = parts[0]
 	}
 
 	ctx := r.Context()
 	var instance computev1.Ec2Instance
-	if err := s.client.Get(ctx, client.ObjectKey{Name: pathName, Namespace: namespace}, &instance); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &instance); err != nil {
 		if errors.IsNotFound(err) {
 			http.Error(w, "Instance not found", http.StatusNotFound)
 			return
@@ -239,21 +250,10 @@ func (s *Server) handleWatchInstances(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// We use client.Watch if it's available, but controller-runtime client.Client
-	// doesn't expose a direct Watch interface for arbitrary unstructured/typed watch easily
-	// outside of cache/source.
-	// For simplicity in the dashboard, we will poll the server for this example every X seconds,
-	// or we can tap into the Kubernetes standard client. Let's do polling with a ticker for simplicity
-	// and to avoid tying up K8s API watches directly per client if we don't have a cache configured.
-	// Production dashboards typically use the controller-runtime Cache directly, or Informers.
-
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	// Keep track of previous state to only send updates when something changes
 	previousState := make(map[string]InstanceResponse)
-
-	// Context cancellation from client disconnect
 	notify := r.Context().Done()
 
 	for {
@@ -269,20 +269,16 @@ func (s *Server) handleWatchInstances(w http.ResponseWriter, r *http.Request) {
 			}
 
 			currentMap := make(map[string]InstanceResponse)
-			for _, inst := range instances.Items {
-				resp := mapToInstanceResponse(&inst)
+			for i := range instances.Items {
+				resp := mapToInstanceResponse(&instances.Items[i])
 				key := resp.Namespace + "/" + resp.Name
 				currentMap[key] = resp
 
 				prev, exists := previousState[key]
 				if !exists {
-					// ADDED
 					sendSSEEvent(w, flusher, "ADDED", resp)
 				} else if prev.State != resp.State || prev.Age != resp.Age {
-					// Age will update often, so maybe don't trigger on age alone unless you want 1s updates.
-					// Let's only trigger on State or other meaningful fields changing
 					if fmt.Sprintf("%v", prev) != fmt.Sprintf("%v", resp) {
-						// MODIFIED
 						sendSSEEvent(w, flusher, "MODIFIED", resp)
 					}
 				}
@@ -335,21 +331,8 @@ func mapToInstanceResponse(inst *computev1.Ec2Instance) InstanceResponse {
 }
 
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("DEBUG: Hit handleStatic for path: %s\n", r.URL.Path)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("React App Placeholder"))
-}
-
-func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("DEBUG: Hit handleSettings for path: %s, method: %s\n", r.URL.Path, r.Method)
-	switch r.Method {
-	case http.MethodGet:
-		s.handleGetSettings(w, r)
-	case http.MethodPost:
-		s.handleUpdateSettings(w, r)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -420,7 +403,6 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "Failed to create settings ConfigMap", http.StatusInternalServerError)
 					return
 				}
-				// If it already exists, update below
 			} else {
 				w.WriteHeader(http.StatusOK)
 				_ = json.NewEncoder(w).Encode(settings)
@@ -434,11 +416,6 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update existing ConfigMap
-	if existing.Name == "" {
-		// Re-fetch in case of weirdness
-		_ = s.client.Get(ctx, client.ObjectKey{Name: "ec2-operator-ui-settings", Namespace: s.namespace}, &existing)
-	}
-
 	existing.Data = cm.Data
 	if err := s.client.Update(ctx, &existing); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update settings ConfigMap", "namespace", s.namespace)
@@ -457,7 +434,6 @@ type GlobalStats struct {
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	// Get total reconciliations from Prometheus counter
 	var m dto.Metric
 	if err := controller.ReconciliationTotal.Write(&m); err != nil {
 		http.Error(w, "Failed to read metrics", http.StatusInternalServerError)
@@ -465,14 +441,12 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	reconCount := int64(m.GetCounter().GetValue())
 
-	// Get instance count from client
 	var instances computev1.Ec2InstanceList
 	if err := s.client.List(r.Context(), &instances); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Get API Latency from Prometheus histogram
 	var m2 dto.Metric
 	latency := 0.0
 	if err := controller.ApiLatency.Write(&m2); err == nil {
@@ -491,6 +465,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(stats)
 }
+
 func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request, name string) {
 	ctx := r.Context()
 	namespace := r.URL.Query().Get("namespace")
@@ -498,11 +473,7 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request, name st
 		namespace = "default"
 	}
 
-	// Fetch events for this specific object
 	var eventList corev1.EventList
-
-	// Create a selector for events involved with this specific Ec2Instance
-	// The involvedObject.kind is Ec2Instance, and name is the instance name.
 	listOpts := []client.ListOption{
 		client.InNamespace(namespace),
 		client.MatchingFields{
@@ -517,8 +488,9 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request, name st
 		return
 	}
 
-	var events []EventResponse
-	for _, event := range eventList.Items {
+	events := make([]EventResponse, 0, len(eventList.Items))
+	for i := range eventList.Items {
+		event := &eventList.Items[i]
 		events = append(events, EventResponse{
 			Type:    event.Type,
 			Reason:  event.Reason,
@@ -530,7 +502,17 @@ func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request, name st
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(events)
+	_ = json.NewEncoder(w).Encode(events)
+}
+
+func (s *Server) handleInstanceLogsLegacy(w http.ResponseWriter, r *http.Request) {
+	// Fallback for older frontend versions
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 4 {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	s.serveLogs(w, r, "default", parts[len(parts)-1])
 }
 
 func (s *Server) handleInstanceLogs(w http.ResponseWriter, r *http.Request) {
@@ -539,10 +521,10 @@ func (s *Server) handleInstanceLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
-	namespace := parts[0]
-	name := parts[1]
+	s.serveLogs(w, r, parts[0], parts[1])
+}
 
-	// 1. Get operator pods
+func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request, namespace string, name string) {
 	pods, err := s.clientset.CoreV1().Pods(s.namespace).List(r.Context(), metav1.ListOptions{
 		LabelSelector: "control-plane=controller-manager",
 	})
@@ -552,8 +534,6 @@ func (s *Server) handleInstanceLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	podName := pods.Items[0].Name
-
-	// 2. Fetch logs
 	tailLines := int64(1000)
 	req := s.clientset.CoreV1().Pods(s.namespace).GetLogs(podName, &corev1.PodLogOptions{
 		Container: "manager",
@@ -571,15 +551,13 @@ func (s *Server) handleInstanceLogs(w http.ResponseWriter, r *http.Request) {
 	scanner := bufio.NewScanner(podLogs)
 	for scanner.Scan() {
 		line := scanner.Text()
-		// Filter by namespace and name
 		if strings.Contains(line, name) && strings.Contains(line, namespace) {
 			var logLine struct {
 				Level string `json:"level"`
 				TS    string `json:"ts"`
 				Msg   string `json:"msg"`
 			}
-			err := json.Unmarshal([]byte(line), &logLine)
-			if err == nil {
+			if err := json.Unmarshal([]byte(line), &logLine); err == nil {
 				logs = append(logs, LogResponse{
 					Timestamp: logLine.TS,
 					Level:     logLine.Level,
@@ -602,5 +580,5 @@ func (s *Server) handleInstanceLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(logs)
+	_ = json.NewEncoder(w).Encode(logs)
 }

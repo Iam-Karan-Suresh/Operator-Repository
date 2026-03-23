@@ -30,14 +30,17 @@ export function Sidebar({ className, currentView, onSelectView, uiSettings }: Si
         <NavItem icon={<Settings size={20} />} label="Settings" active={currentView === 'settings'} onClick={() => onSelectView('settings')} />
       </nav>
 
-      <div className="p-4 border-t border-border mt-auto">
+      <div className="p-4 border-t border-border mt-auto group cursor-pointer hover:bg-white/5 transition-colors">
         <div className="flex items-center space-x-3 px-2">
-          <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-semibold text-xs">
-            {initials}
+          <div className="relative">
+            <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/20 flex items-center justify-center text-primary font-semibold text-xs relative z-10 group-hover:ring-2 group-hover:ring-primary/50 group-hover:scale-110 transition-all duration-300">
+              {initials}
+            </div>
           </div>
           <div className="text-sm overflow-hidden">
-            <p className="font-medium leading-none mb-1 truncate">{uiSettings?.name || 'User Name'}</p>
-            <p className="text-muted-foreground text-[10px] truncate">{uiSettings?.team || 'Cloud Team'}</p>
+            <p className="font-medium leading-none mb-1 truncate text-foreground/90 group-hover:text-foreground transition-colors">{uiSettings?.name || 'User Name'}</p>
+            <p className="text-muted-foreground text-[10px] truncate group-hover:text-muted-foreground/80">{uiSettings?.team || 'Cloud Team'}</p>
           </div>
         </div>
       </div>

@@ -17,6 +17,7 @@ interface SettingsProps {
 export function Settings({ uiSettings, onUpdateSettings }: SettingsProps) {
   const [localSettings, setLocalSettings] = useState<UISettings>(uiSettings);
   const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     setLocalSettings(uiSettings);
@@ -26,6 +27,7 @@ export function Settings({ uiSettings, onUpdateSettings }: SettingsProps) {
     setSaving(true);
     try {
       const resp = await fetch(`${API_URL}/api/settings`, {
+        // use proxy in vite.config.ts for local dev
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(localSettings)
@@ -33,6 +35,8 @@ export function Settings({ uiSettings, onUpdateSettings }: SettingsProps) {
       if (resp.ok) {
         const data = await resp.json();
         onUpdateSettings(data);
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
       }
     } catch (err) {
       console.error("Failed to save settings", err);
@@ -50,13 +54,20 @@ export function Settings({ uiSettings, onUpdateSettings }: SettingsProps) {
           </h1>
           <p className="text-muted-foreground mt-1">Manage global operator configurations and UI personalization.</p>
         </div>
-        <button 
-          onClick={handleSave}
-          disabled={saving}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors flex items-center disabled:opacity-50"
-        >
-          <Save size={16} className="mr-2" /> {saving ? 'Saving...' : 'Save Changes'}
-        </button>
+        <div className="flex items-center gap-4">
+          {success && (
+            <span className="text-sm text-green-400 font-medium animate-in slide-in-from-right-4 fade-in">
+              Successfully saved!
+            </span>
+          )}
+          <button 
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors flex items-center disabled:opacity-50"
+          >
+            <Save size={16} className="mr-2" /> {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">

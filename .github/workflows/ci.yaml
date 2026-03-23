@@ -1,0 +1,55 @@
+name: CI Workflows
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint-and-test:
+    name: Lint & Test Go Code
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22'
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Run Tests
+      run: make test
+
+    # To run golangci-lint
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: latest
+        args: --timeout=5m
+
+  web-build:
+    name: Build React Frontend
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20'
+
+    - name: Install Dependencies
+      working-directory: ./web
+      run: npm install
+
+    - name: Lint TS/TSX
+      working-directory: ./web
+      run: npm run lint
+
+    - name: Build Web
+      working-directory: ./web
+      run: npm run build
