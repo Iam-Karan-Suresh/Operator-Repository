@@ -28,3 +28,7 @@ go.work
 
 # Kubeconfig might contain secrets
 *.kubeconfig
+
+# Frontend build output (keep placeholder so go embed compiles on clean checkout)
+web/dist/**
+!web/dist/.gitkeep
