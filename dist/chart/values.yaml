@@ -3,8 +3,8 @@ controllerManager:
   replicas: 1
   container:
     image:
-      repository: docker.io/karanwebdev/ec2-kubernetes-operator
-      tag: latest
+      repository: ghcr.io/iam-karan-suresh/ec2-operator-manager
+      tag: v1.0.3
     imagePullPolicy: IfNotPresent
     args:
       - "--leader-elect"
@@ -164,3 +164,10 @@ uiSettings:
   name: "User Name"
   profession: "Project Lead"
   team: "Cloud Operations"
+
+# [AWS]: AWS Credentials and Region
+awsCredentials:
+  secretName: "aws-credentials"
+  accessKeyId: ""
+  secretAccessKey: ""
+  region: "us-east-1"

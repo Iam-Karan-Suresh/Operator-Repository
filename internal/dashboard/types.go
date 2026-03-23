@@ -26,3 +26,13 @@ type WatchEvent struct {
 	Type   string           `json:"type"` // "ADDED", "MODIFIED", "DELETED"
 	Object InstanceResponse `json:"object"`
 }
+
+// EventResponse represents a Kubernetes event
+type EventResponse struct {
+	Type     string    `json:"type"` // Normal, Warning
+	Reason   string    `json:"reason"`
+	Message  string    `json:"message"`
+	Time     time.Time `json:"time"`
+	Age      string    `json:"age"`
+	Object   string    `json:"object"`
+}

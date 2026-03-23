@@ -10,7 +10,30 @@ A production-grade Kubernetes operator to manage AWS EC2 instances with a real-t
 - **AWS CLI** configured (`aws configure`)
 
 ### 2. Configure AWS Access
-The operator uses your local AWS credentials. Ensure you have the necessary permissions for EC2 (e.g., `AmazonEC2FullAccess`).
+The operator requires AWS credentials to manage EC2 instances. You can provide them in two ways:
+
+#### Option A: Direct values in `values.yaml` (Local Development)
+Edit `dist/chart/values.yaml`:
+```yaml
+awsCredentials:
+  accessKeyId: "YOUR_ACCESS_KEY"
+  secretAccessKey: "YOUR_SECRET_KEY"
+  region: "us-east-1"
+```
+
+#### Option B: Using a Kubernetes Secret (Recommended)
+1. Create the secret:
+```bash
+kubectl create secret generic aws-credentials \
+  --from-literal=AWS_ACCESS_KEY_ID=YOUR_ACCESS_KEY \
+  --from-literal=AWS_SECRET_ACCESS_KEY=YOUR_SECRET_KEY
+```
+2. Update `dist/chart/values.yaml` to use the secret:
+```yaml
+awsCredentials:
+  secretName: "aws-credentials"
+  region: "us-east-1"
+```
 
 ### 3. Deploy the Stack
 Deploy the operator, dashboard, and full observability stack with a single command:

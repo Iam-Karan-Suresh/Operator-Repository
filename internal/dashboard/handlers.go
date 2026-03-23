@@ -171,6 +171,12 @@ func (s *Server) handleGetInstanceOrWatch(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if strings.HasSuffix(pathName, "/events") {
+		instanceName := strings.TrimSuffix(pathName, "/events")
+		s.handleGetEvents(w, r, instanceName)
+		return
+	}
+
 	// It's a GET request for a specific instance
 	if pathName == "" {
 		http.Error(w, "Not found", http.StatusNotFound)
@@ -430,4 +436,48 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request, name string) {
+	ctx := r.Context()
+	namespace := r.URL.Query().Get("namespace")
+	if namespace == "" {
+		namespace = "default"
+	}
+
+	// Fetch events for this specific object
+	var eventList corev1.EventList
+	
+	// Create a selector for events involved with this specific Ec2Instance
+	// The involvedObject.kind is Ec2Instance, and name is the instance name.
+	listOpts := []client.ListOption{
+		client.InNamespace(namespace),
+		client.MatchingFields{
+			"involvedObject.name": name,
+			"involvedObject.kind": "Ec2Instance",
+		},
+	}
+
+	if err := s.client.List(ctx, &eventList, listOpts...); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list events")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var response []EventResponse
+	for _, e := range eventList.Items {
+		response = append(response, EventResponse{
+			Type:    e.Type,
+			Reason:  e.Reason,
+			Message: e.Message,
+			Time:    e.LastTimestamp.Time,
+			Age:     duration.HumanDuration(time.Since(e.LastTimestamp.Time)),
+			Object:  e.InvolvedObject.Name,
+		})
+	}
+
+	// Sort events by time (newest first)
+	// (Optional, but good for UI)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

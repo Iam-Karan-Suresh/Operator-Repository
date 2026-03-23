@@ -42,6 +42,8 @@ import (
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/controller"
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/dashboard"
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/telemetry"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -143,6 +145,16 @@ func main() {
 		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
 			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
 
+		var err error
+		webhookCertWatcher, err = certwatcher.New(webhookCertPath+"/"+webhookCertName, webhookCertPath+"/"+webhookCertKey)
+		if err != nil {
+			setupLog.Error(err, "unable to initialize webhook certificate watcher")
+			os.Exit(1)
+		}
+
+		webhookServerOptions.TLSOpts = append(webhookServerOptions.TLSOpts, func(cfg *tls.Config) {
+			cfg.GetCertificate = webhookCertWatcher.GetCertificate
+		})
 		webhookServerOptions.CertDir = webhookCertPath
 		webhookServerOptions.CertName = webhookCertName
 		webhookServerOptions.KeyName = webhookCertKey
@@ -206,6 +218,15 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	// Add indexer for events to allow filtering by involvedObject.name
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Event{}, "involvedObject.name", func(rawObj client.Object) []string {
+		event := rawObj.(*corev1.Event)
+		return []string{event.InvolvedObject.Name}
+	}); err != nil {
+		setupLog.Error(err, "unable to set up field indexer for events")
 		os.Exit(1)
 	}
 

@@ -5,7 +5,7 @@ metadata:
   namespace: default
 
 spec:
-  instanceType: t2.micro
+  instanceType: t3.micro
   amiId: ami-0b6c6ebed2801a5cb  #ubuntu 24
   region: us-east-1
   availabilityZone: us-east-1a

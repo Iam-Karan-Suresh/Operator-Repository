@@ -1,9 +1,11 @@
-import type { InstanceResponse } from '../types/instance';
+import { useState, useEffect, useCallback } from 'react';
+import type { InstanceResponse, EventResponse } from '../types/instance';
 import { StatusBadge } from './StatusBadge';
 import { LifecycleTimeline } from './LifecycleTimeline';
-import { ArrowLeft, Server, Cpu, Terminal, Key, Shield, Network, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Server, Cpu, Terminal, Key, Shield, Network, RefreshCw, ListFilter, X, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '../utils';
+import { fetchInstanceEvents } from '../api/client';
 
 interface InstanceDetailProps {
   instance: InstanceResponse;
@@ -13,6 +15,27 @@ interface InstanceDetailProps {
 }
 
 export function InstanceDetail({ instance, onBack, onRefresh, refreshing }: InstanceDetailProps) {
+  const [showLogs, setShowLogs] = useState(false);
+  const [events, setEvents] = useState<EventResponse[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+
+  const loadEvents = useCallback(async () => {
+    setLoadingEvents(true);
+    try {
+      const data = await fetchInstanceEvents(instance.name, instance.namespace);
+      setEvents(data);
+    } catch (err) {
+      console.error('Failed to fetch events:', err);
+    } finally {
+      setLoadingEvents(false);
+    }
+  }, [instance.name, instance.namespace]);
+
+  useEffect(() => {
+    if (showLogs) {
+      loadEvents();
+    }
+  }, [showLogs, loadEvents]);
   return (
     <div className="space-y-6 animate-in slide-in-from-right-8 duration-500">
       {/* Header section */}
@@ -32,6 +55,18 @@ export function InstanceDetail({ instance, onBack, onRefresh, refreshing }: Inst
               title="Refresh instance details"
             >
               <RefreshCw size={18} className={cn(refreshing && "animate-spin")} />
+            </button>
+            <button 
+              onClick={() => setShowLogs(!showLogs)}
+              className={cn(
+                "px-4 py-2 border rounded-lg text-sm font-medium transition-all flex items-center space-x-2 shadow-sm",
+                showLogs 
+                  ? "bg-primary text-primary-foreground border-primary" 
+                  : "bg-card hover:bg-card/80 border-border text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <ListFilter className="w-4 h-4" />
+              <span>{showLogs ? 'Hide Logs' : 'Show Logs'}</span>
             </button>
           </div>
           <div>
@@ -113,6 +148,69 @@ export function InstanceDetail({ instance, onBack, onRefresh, refreshing }: Inst
               </div>
             </div>
           </div>
+
+          {/* Logs / Events Panel */}
+          {showLogs && (
+            <div className="glass rounded-xl border border-primary/20 bg-primary/5 shadow-xl animate-in fade-in zoom-in-95 duration-300 overflow-hidden mt-6">
+              <div className="flex items-center justify-between p-4 border-b border-primary/10 bg-primary/10">
+                <div className="flex items-center space-x-2">
+                  <Terminal className="w-5 h-5 text-primary" />
+                  <h3 className="font-semibold text-foreground">Kubernetes Events (Resource Logs)</h3>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button 
+                    onClick={loadEvents} 
+                    className="p-1.5 hover:bg-primary/20 rounded-md transition-colors text-primary"
+                    title="Refresh logs"
+                  >
+                    <RefreshCw size={14} className={cn(loadingEvents && "animate-spin")} />
+                  </button>
+                  <button 
+                    onClick={() => setShowLogs(false)} 
+                    className="p-1.5 hover:bg-primary/20 rounded-md transition-colors text-muted-foreground"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+              <div className="p-0 max-h-[400px] overflow-y-auto font-mono text-xs">
+                {loadingEvents && events.length === 0 ? (
+                  <div className="p-8 flex items-center justify-center text-muted-foreground">
+                    <RefreshCw className="w-5 h-5 animate-spin mr-3 text-primary" />
+                    <span>Fetching events from API server...</span>
+                  </div>
+                ) : events.length === 0 ? (
+                  <div className="p-12 flex flex-col items-center justify-center text-muted-foreground text-center">
+                    <AlertCircle className="w-8 h-8 mb-3 opacity-20" />
+                    <p>No events found for this resource.</p>
+                    <p className="text-[10px] mt-1 opacity-50">Events are typically retained for 1 hour by Kubernetes.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/30">
+                    {events.map((event, idx) => (
+                      <div key={idx} className="p-3 hover:bg-background/40 transition-colors flex gap-4">
+                        <div className="flex-shrink-0 w-24 text-muted-foreground/60 tabular-nums">
+                          {event.age}
+                        </div>
+                        <div className={cn(
+                          "flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] h-fit font-bold uppercase",
+                          event.type === 'Warning' ? "bg-amber-500/10 text-amber-500" : "bg-emerald-500/10 text-emerald-500"
+                        )}>
+                          {event.reason}
+                        </div>
+                        <div className="flex-grow text-foreground/90 leading-relaxed">
+                          {event.message}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="p-2 bg-primary/5 border-t border-primary/10 text-[10px] text-center text-muted-foreground italic">
+                Logs show the operational history of the Kubernetes Custom Resource.
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Sidebar Column */}

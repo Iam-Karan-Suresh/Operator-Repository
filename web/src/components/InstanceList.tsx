@@ -83,7 +83,7 @@ export function InstanceList({ onSelectInstance, onRefresh, refreshing }: Instan
         </div>
       </div>
 
-      <div className="glass p-4 rounded-xl border border-border flex flex-col sm:flex-row flex-wrap gap-4 items-center justify-between">
+      <div className="glass p-4 rounded-xl border border-border flex flex-col sm:flex-row flex-wrap gap-4 items-center justify-between shadow-lg backdrop-blur-md">
         <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -92,33 +92,35 @@ export function InstanceList({ onSelectInstance, onRefresh, refreshing }: Instan
               placeholder="Search instances..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-background/50 border border-border rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all placeholder:text-muted-foreground/50"
+              className="w-full bg-background/40 border border-border/50 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 transition-all placeholder:text-muted-foreground/40"
             />
           </div>
           
-          <div className="flex items-center gap-2 border border-border bg-background/50 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 border border-border/50 bg-background/30 rounded-lg px-3 py-2 transition-all hover:border-primary/30">
             <Filter size={14} className="text-muted-foreground" />
             <select 
               value={regionFilter} 
               onChange={e => setRegionFilter(e.target.value)}
-              className="bg-transparent text-sm focus:outline-none text-foreground"
+              className="bg-transparent text-sm focus:outline-none text-foreground cursor-pointer"
             >
-              <option value="all">All Regions</option>
-              <option value="us-east-1">us-east-1</option>
-              <option value="eu-central-1">eu-central-1</option>
+              <option value="all" className="bg-background text-foreground">All Regions</option>
+              <option value="us-east-1" className="bg-background text-foreground">us-east-1</option>
+              <option value="eu-central-1" className="bg-background text-foreground">eu-central-1</option>
+              <option value="us-west-2" className="bg-background text-foreground">us-west-2</option>
             </select>
           </div>
 
-          <div className="flex items-center gap-2 border border-border bg-background/50 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 border border-border/50 bg-background/30 rounded-lg px-3 py-2 transition-all hover:border-primary/30">
             <select 
               value={stateFilter} 
               onChange={e => setStateFilter(e.target.value)}
-              className="bg-transparent text-sm focus:outline-none text-foreground"
+              className="bg-transparent text-sm focus:outline-none text-foreground cursor-pointer"
             >
-              <option value="all">All States</option>
-              <option value="running">running</option>
-              <option value="stopped">stopped</option>
-              <option value="pending">pending</option>
+              <option value="all" className="bg-background text-foreground">All States</option>
+              <option value="running" className="bg-background text-foreground text-success">running</option>
+              <option value="stopped" className="bg-background text-foreground text-warning">stopped</option>
+              <option value="pending" className="bg-background text-foreground text-primary">pending</option>
+              <option value="terminated" className="bg-background text-foreground text-destructive">terminated</option>
             </select>
           </div>
         </div>
@@ -127,36 +129,26 @@ export function InstanceList({ onSelectInstance, onRefresh, refreshing }: Instan
           {selectedInstances.size > 0 && (
             <div className="flex items-center gap-2 animate-in slide-in-from-right-4">
               <span className="text-sm font-medium mr-2">{selectedInstances.size} selected</span>
-              <button className="p-2 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-lg transition-colors title='Start selected'">
+              <button className="p-2 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-lg transition-colors" title="Start selected">
                 <Play size={16} />
               </button>
-              <button className="p-2 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 rounded-lg transition-colors title='Stop selected'">
+              <button className="p-2 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 rounded-lg transition-colors" title="Stop selected">
                 <Square size={16} />
               </button>
-              <button className="p-2 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition-colors title='Terminate selected'">
+              <button className="p-2 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition-colors" title="Terminate selected">
                 <Trash2 size={16} />
               </button>
-              <div className="w-px h-6 bg-border mx-1" />
+              <div className="w-px h-6 bg-border/50 mx-1" />
             </div>
           )}
           <button 
             onClick={onRefresh}
             disabled={refreshing}
-            className="p-2.5 bg-card hover:bg-card/80 border border-border rounded-lg text-muted-foreground hover:text-primary transition-all disabled:opacity-50"
+            className="p-2.5 bg-card/50 hover:bg-card border border-border/50 rounded-lg text-muted-foreground hover:text-primary transition-all disabled:opacity-50 shadow-sm"
             title="Refresh instances"
           >
             <RefreshCw size={18} className={cn(refreshing && "animate-spin")} />
           </button>
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input 
-              type="text" 
-              placeholder="Search instances..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-card/50 border border-border rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all placeholder:text-muted-foreground/50"
-            />
-          </div>
         </div>
       </div>
 
