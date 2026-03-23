@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -31,14 +32,99 @@ func createEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) 
 		"region", ec2Instance.Spec.Region,
 	)
 
-	ec2Client := awsClient(ec2Instance.Spec.Region)
+	ec2Client, err := awsClient(ctx, ec2Instance.Spec.Region)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize AWS client: %w", err)
+	}
+
+	// Prepare TagSpecifications for Name and other tags
+	tagSpecs := []ec2types.TagSpecification{
+		{
+			ResourceType: ec2types.ResourceTypeInstance,
+			Tags: []ec2types.Tag{
+				{
+					Key:   aws.String("Name"),
+					Value: aws.String(ec2Instance.Name),
+				},
+			},
+		},
+	}
+
+	// Add additional tags from spec if any
+	for k, v := range ec2Instance.Spec.Tags {
+		if k != "Name" { // Don't override our primary Name tag
+			tagSpecs[0].Tags = append(tagSpecs[0].Tags, ec2types.Tag{
+				Key:   aws.String(k),
+				Value: aws.String(v),
+			},
+			)
+		}
+	}
+
+	// Storage configuration
+	var blockDeviceMappings []ec2types.BlockDeviceMapping
+
+	// Root volume
+	if ec2Instance.Spec.Storage.RootVolume.Size > 0 {
+		mapping := ec2types.BlockDeviceMapping{
+			DeviceName: aws.String("/dev/sda1"), // Default root device for many AMIs
+			Ebs: &ec2types.EbsBlockDevice{
+				VolumeSize: aws.Int32(ec2Instance.Spec.Storage.RootVolume.Size),
+				VolumeType: ec2types.VolumeType(ec2Instance.Spec.Storage.RootVolume.Type),
+				Encrypted:  aws.Bool(ec2Instance.Spec.Storage.RootVolume.Encrypted),
+			},
+		}
+		blockDeviceMappings = append(blockDeviceMappings, mapping)
+	}
+
+	// Additional volumes
+	for _, vol := range ec2Instance.Spec.Storage.AdditionalVolumes {
+		mapping := ec2types.BlockDeviceMapping{
+			DeviceName: aws.String(vol.DeviceName),
+			Ebs: &ec2types.EbsBlockDevice{
+				VolumeSize: aws.Int32(vol.Size),
+				VolumeType: ec2types.VolumeType(vol.Type),
+				Encrypted:  aws.Bool(vol.Encrypted),
+			},
+		}
+		blockDeviceMappings = append(blockDeviceMappings, mapping)
+	}
 
 	runInput := &ec2.RunInstancesInput{
-		ImageId:      aws.String(ec2Instance.Spec.AMIId),
-		InstanceType: ec2types.InstanceType(ec2Instance.Spec.InstanceType),
-		SubnetId:     aws.String(ec2Instance.Spec.Subnet),
-		MinCount:     aws.Int32(1),
-		MaxCount:     aws.Int32(1),
+		ImageId:           aws.String(ec2Instance.Spec.AMIId),
+		InstanceType:      ec2types.InstanceType(ec2Instance.Spec.InstanceType),
+		SubnetId:          aws.String(ec2Instance.Spec.Subnet),
+		MinCount:          aws.Int32(1),
+		MaxCount:          aws.Int32(1),
+		TagSpecifications: tagSpecs,
+	}
+
+	// Add Placement (Availability Zone)
+	if ec2Instance.Spec.AvailabilityZone != "" {
+		runInput.Placement = &ec2types.Placement{
+			AvailabilityZone: aws.String(ec2Instance.Spec.AvailabilityZone),
+		}
+	}
+
+	// Add KeyPair
+	if ec2Instance.Spec.KeyPair != "" {
+		runInput.KeyName = aws.String(ec2Instance.Spec.KeyPair)
+	}
+
+	// Add Security Groups
+	if len(ec2Instance.Spec.SecurityGroups) > 0 {
+		runInput.SecurityGroupIds = ec2Instance.Spec.SecurityGroups
+	}
+
+	// Add UserData (must be base64 encoded)
+	if ec2Instance.Spec.UserData != "" {
+		encodedUserData := base64.StdEncoding.EncodeToString([]byte(ec2Instance.Spec.UserData))
+		runInput.UserData = aws.String(encodedUserData)
+	}
+
+	// Add Storage
+	if len(blockDeviceMappings) > 0 {
+		runInput.BlockDeviceMappings = blockDeviceMappings
 	}
 
 	log.Info(" === CALLING AWS RunInstances API === ")

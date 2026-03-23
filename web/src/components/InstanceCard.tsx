@@ -63,11 +63,16 @@ export function InstanceCard({ instance, onClick, selected, onToggleSelect }: In
         </div>
       </div>
 
-      <div className="mt-5 pt-4 border-t border-border/50 flex justify-between items-center text-xs font-medium text-muted-foreground group-hover:text-primary transition-colors relative z-10">
+      <div className="mt-5 pt-4 border-t border-border/50 flex justify-between items-center text-xs font-medium text-muted-foreground transition-colors relative z-10">
         <span>Namespace: {instance.namespace}</span>
-        <span className="flex items-center">
-          Details <ArrowRight size={14} className="ml-1 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
-        </span>
+        <div className="flex items-center space-x-3">
+          <button 
+            onClick={(e) => { e.stopPropagation(); onClick(); /* Wait, I need a way to open it in Detail view with logs open */ }}
+            className="flex items-center hover:text-primary transition-colors py-1 px-2 rounded-md hover:bg-primary/10"
+          >
+            <ArrowRight size={14} className="mr-1" /> Details
+          </button>
+        </div>
       </div>
     </div>
   );

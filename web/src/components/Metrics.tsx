@@ -6,10 +6,11 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 interface Stats {
   reconciliationCount: number;
   instanceCount: number;
+  apiLatency: number;
 }
 
 export function Metrics() {
-  const [stats, setStats] = useState<Stats>({ reconciliationCount: 0, instanceCount: 0 });
+  const [stats, setStats] = useState<Stats>({ reconciliationCount: 0, instanceCount: 0, apiLatency: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -56,7 +57,12 @@ export function Metrics() {
           value={loading ? "..." : stats.instanceCount.toString()} 
           change="Real-time" 
         />
-        <MetricCard icon={<Network />} title="API Latency (avg)" value="45ms" change="-5ms" />
+        <MetricCard 
+          icon={<Network />} 
+          title="API Latency (avg)" 
+          value={loading ? "..." : `${stats.apiLatency.toFixed(1)}ms`} 
+          change={stats.apiLatency > 50 ? "High" : "Optimal"} 
+        />
         <MetricCard icon={<HardDrive />} title="Total Storage" value="500 GB" change="+50 GB" />
       </div>
 

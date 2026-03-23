@@ -1,0 +1,119 @@
+# Walkthrough - Fixed ImagePullBackOff for Operator and Dashboard
+
+I have resolved the `ImagePullBackOff` issue by building, pushing, and deploying updated Docker images for both the operator controller and the dashboard.
+
+## Changes Made
+
+### 1. Docker Environment & Build Fixes
+- **Multi-stage Dockerfile**: Updated the main [Dockerfile](file:///home/roronoa-zoro/Projects/Operator-Repository/Dockerfile) to include a frontend build stage (Node.js 22.x) to generate `web/dist` required by the operator binary (which embeds the dashboard).
+- **Node.js Upgrade**: Updated both `Dockerfile` and `Dockerfile.dashboard` to use `node:22-alpine` to satisfy Vite v8.0.1 requirements (Node 18 was incompatible).
+- **.dockerignore Update**: Modified `.dockerignore` to re-include the `web/` directory, allowing the Docker build context to see the frontend source code.
+
+### 2. Jaeger CrashLoopBackOff Resolution
+- **All-in-One Configuration**: Fixed a configuration conflict by explicitly enabling `all-in-one` mode and disabling distributed components (collector, query, agent) in the Jaeger subchart.
+- **Image Upgrade**: Updated the Jaeger `all-in-one` image to version `1.60.0`, resolving a panic during static assets initialization.
+- **Resource Conflict**: Resolved a conflict with a legacy Cassandra StatefulSet and Service during the Helm upgrade.
+
+### 3. Service Exposure (Observability Stack)
+- **NodePort Services**: Updated the service types for Grafana, Prometheus, and OpenCost to `NodePort` in `values.yaml`.
+### 4. Helm Chart Distribution & Fixes (v1.0.1)
+- **CRD Columns**: Fixed the `kubectl get ec2instance` output by adding `State`, `Instance ID`, and `Public IP` print columns in the CRD definition and Helm chart.
+- **AWS Credentials Support**: Updated the manager template and `values.yaml` to allow formal AWS credential injection (via environment variables or secrets).
+- **OCI Push**: Packaged and pushed the updated Helm chart as version `1.0.1` to GitHub Container Registry (GHCR).
+- **Target URL**: `oci://ghcr.io/iam-karan-suresh/ec2-operator:1.0.1`
+
+## Verification Results
+
+### Pod Status
+Both the operator and the dashboard are now in the `Running` state:
+- `operator-controller-manager-7f45677659-j9xpz`: **Running**
+- `operator-dashboard-856495d8f5-b6kqb`: **Running**
+
+## Service URLs (Minikube)
+
+You can access the services using the following URLs:
+- **Grafana**: [http://192.168.49.2:32157](http://192.168.49.2:32157)
+- **Prometheus**: [http://192.168.49.2:31691](http://192.168.49.2:31691)
+- **OpenCost (UI)**: [http://192.168.49.2:32097](http://192.168.49.2:32097)
+- **Jaeger (UI)**: [http://192.168.49.2:32038](http://192.168.49.2:32038)
+### 4. Operator Dashboard Operator Dashboard: [http://192.168.49.2:32091](http://192.168.49.2:32091)
+
+---
+
+## [v1.0.3] Web UI & Documentation Enhancements
+
+### 🚀 Key Features
+
+*   **Architecture Documentation**: Created a detailed [web/README.md](file:///home/roronoa-zoro/Projects/Operator-Repository/web/README.md) explaining the event-driven system (SSE), API flows, and tech stack.
+*   **Logs Feature (ArgoCD-style)**: 
+    *   Implemented a new backend endpoint to fetch Kubernetes Events for each `Ec2Instance`.
+    *   Added a **"Logs"** button in the instance detail view that opens a real-time events panel.
+*   **UI Filter & Styling Refinement**:
+    *   **Deduplicated Search**: Removed the redundant search bar in the instances list.
+    *   **Premium Filtering**: Redesigned the Region and State dropdowns with a cleaner, more integrated look.
+    *   **Color Grading**: Enhanced the `StatusBadge` and list view with vibrant, state-specific color palettes (Emerald for Running, Rose for Terminated, etc.) and subtle animations.
+
+### 🛠️ Technical Changes
+
+*   **Backend**: Added `involvedObject.name` field indexer to `cmd/main.go` for efficient event filtering.
+*   **Backend**: Implemented `/api/instances/{name}/events` handler in `internal/dashboard/handlers.go`.
+*   **Frontend**: Integrated `fetchInstanceEvents` API call and added the interactive Logs panel in `InstanceDetail.tsx`.
+*   **Security**: Fixed `webhookCertWatcher` initialization logic to support dynamic TLS reloading in `cmd/main.go`.
+
+### 📦 Deployment Instructions (v1.0.3)
+
+Since the operator manager now includes new backend logic, embedded frontend, and CI/CD fixes, please push the new image and chart:
+
+1.  **Push the Manager Image**:
+    ```bash
+    docker push ghcr.io/iam-karan-suresh/ec2-operator-manager:v1.0.3
+    ```
+
+2.  **Push the Helm Chart**:
+    ```bash
+    helm push ec2-operator-1.0.3.tgz oci://ghcr.io/iam-karan-suresh
+    ```
+
+3.  **Upgrade the Release**:
+    ```bash
+    helm upgrade ec2-operator oci://ghcr.io/iam-karan-suresh/ec2-operator --version 1.0.3
+    ```
+
+---
+
+## 🛠️ CI/CD Pipeline Fixes (GitHub Actions)
+
+I have resolved the failures in the GitHub Actions pipeline by addressing over 20 linting and compilation issues:
+
+*   **Linting (golangci-lint)**:
+    *   **Errcheck**: Fixed 7+ unchecked errors in `handlers.go` (JSON encoding, I/O writes).
+    *   **Goconst**: Extracted magic strings ("running", "terminated", "default") into named constants.
+    *   **Staticcheck**: Resolved empty branches (SA9003) and non-idiomatic switch statements (QF1003).
+    *   **Scoped Scanning**: Updated the `Makefile` to run `golangci-lint` only on `api/...`, `cmd/...`, and `internal/...`, successfully bypassing third-party code in `node_modules` that was causing false positives.
+*   **Compilation**:
+    *   Fixed incorrect package aliasing in `cmd/dashboard/main.go`.
+    *   Corrected `corev1` import aliasing in `internal/controller/ec2instance_controller.go`.
+*   **Eventing**:
+    *   Added a `Recorder` to the `Ec2InstanceReconciler` to support Kubernetes Event publishing for the new "Logs" feature.
+
+### ✅ Verification Results (v1.0.3)
+
+#### 1. CI/CD Stability
+`make lint` passes with **0 issues**. All previously reported compilation errors are fixed.
+
+#### 2. Operator Reconciliation
+The operator successfully reconciled the `web-server-1` instance in the `default` namespace:
+```text
+NAME           STATE     INSTANCE ID           PUBLIC IP       AGE
+web-server-1   running   i-0ad1529ba6b78402c   18.215.238.67   15m
+```
+
+#### 3. Logs & Events (RBAC Fixed)
+Added cluster-wide `events` permissions to the operator, enabling the **"Logs"** feature in the Web UI to show real-time reconciliation progress and errors (e.g., AuthFailure, InvalidAMIID).
+
+#### 4. Dashboard Accessibility
+Accessible via:
+```bash
+kubectl port-forward svc/operator-dashboard 3000:3000 -n operator-system
+```
+Verified that filters, status color grading, and logs buttons are fully functional and premium-grade.

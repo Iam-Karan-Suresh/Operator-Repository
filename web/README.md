@@ -1,73 +1,48 @@
-# React + TypeScript + Vite
+# Web UI Architecture
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The EC2 Instance Operator Dashboard is a real-time, event-driven web application built with modern web technologies and a focus on observability.
 
-Currently, two official plugins are available:
+## 🏗 System Architecture
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The dashboard operates as an embedded component within the EC2 Kubernetes Operator.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```mermaid
+graph TD
+    User([User Browser]) <--> |REST / SSE| Dashboard[Dashboard API Server]
+    Dashboard <--> |controller-runtime client| K8sAPI[Kubernetes API Server]
+    K8sAPI <--> |Watched by| Reconciler[EC2 Operator Reconciler]
+    Reconciler <--> |AWS SDK v2| AWS[Amazon Web Services]
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 📡 Data Flow & State Updates
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+The dashboard uses **Server-Sent Events (SSE)** to provide real-time updates to the UI without requiring page refreshes.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+1.  **Initial Load**: When the dashboard loads, it performs a standard `GET /api/instances` call to populate the initial list.
+2.  **Streaming Updates**: The frontend opens a persistent connection to `/api/instances/watch`.
+3.  **Polling Loop**: The backend dashboard server runs a background loop (every 2 seconds) that queries the Kubernetes API for the current state of `Ec2Instance` resources.
+4.  **Differential Updates**: The server compares the current state with the last known state for each client and sends `ADDED`, `MODIFIED`, or `DELETED` events over the SSE stream.
+5.  **Reactive UI**: The React frontend listens for these events and updates the local state, triggering smooth re-renders.
+
+### 🔌 API Endpoints (Backend -> Operator)
+
+The dashboard server interacts with the Kubernetes API server using the `controller-runtime` client:
+-   `GET /api/instances`: Lists all `Ec2Instance` custom resources.
+-   `GET /api/instances/{name}`: Fetches a single instance's detailed specification and status.
+-   `GET /api/instances/{name}/events`: (Coming Soon) Fetches Kubernetes events related to the specific instance.
+-   `GET /api/stats`: Aggregates metrics from the operator's internal Prometheus counters.
+-   `GET/POST /api/settings`: Manages user personalization settings stored in a cluster-wide ConfigMap.
+
+## 🛠 Tech Stack
+
+-   **Frontend**: React, TypeScript, Vite, Tailwind CSS, Lucide Icons, Framer Motion.
+-   **Backend**: Go (standard `net/http` server embedded in the operator).
+-   **Observability**: Integrated with Prometheus (metrics), Jaeger (tracing), and OpenCost (cloud cost monitoring).
+
+## 🚀 Development
+
+The frontend is a standalone React app located in the `web/` directory. For local development:
+1.  Run the operator locally (`make run`) to start the API server.
+2.  Navigate to the `web/` directory.
+3.  Run `npm install && npm run dev`.
+4.  The dashboard will connect to the local operator at `http://localhost:3000/api`.

@@ -1,9 +1,11 @@
 apiVersion: compute.cloud.com/v1
-kind: EC2Instance
+kind: Ec2Instance
 metadata:
   labels:
     app.kubernetes.io/name: operator
     app.kubernetes.io/managed-by: kustomize
-  name: ec2instance-sample
+  name: web-server-1
 spec:
-  # TODO(user): Add fields here
+  amiId: "ami-0c55b159cbfafe1f0" # Amazon Linux 2 (us-east-1)
+  instanceType: "t2.micro"
+  region: "us-east-1"

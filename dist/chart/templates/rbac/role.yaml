@@ -33,4 +33,17 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - ""
+  - ""
+  resources:
+  - events
+  - configmaps
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
 {{- end -}}

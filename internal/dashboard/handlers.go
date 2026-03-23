@@ -1,23 +1,30 @@
 package dashboard
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/controller"
 	dto "github.com/prometheus/client_model/go"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/duration"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+const (
+	DefaultNamespace = "default"
 )
 
 type UISettings struct {
@@ -26,20 +33,29 @@ type UISettings struct {
 	Team       string `json:"team"`
 }
 
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;patch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods/log,verbs=get;list;watch
+
 // Server handles dashboard API requests
 type Server struct {
 	client    client.Client
+	clientset *kubernetes.Clientset
 	port      string
 	namespace string
 	staticFS  fs.FS
 }
 
-// NewServer creates a new dashboard API server
-func NewServer(client client.Client, port string) *Server {
+func NewServer(mgrClient client.Client, clientset *kubernetes.Clientset, port string) *Server {
 	// Try to get namespace from environment, fallback to default
-	ns := "default"
+	ns := os.Getenv("POD_NAMESPACE")
+	if ns == "" {
+		ns = DefaultNamespace
+	}
 	return &Server{
-		client:    client,
+		client:    mgrClient,
+		clientset: clientset,
 		port:      port,
 		namespace: ns,
 	}
@@ -72,7 +88,9 @@ func (s *Server) StartWithFS(ctx context.Context, f fs.FS) error {
 	// API Routes
 	mux.HandleFunc("/api/instances", s.handleListInstances)
 	mux.HandleFunc("/api/instances/", s.handleGetInstanceOrWatch) // prefixes with GET /api/instances/{name} or /api/instances/watch
-	mux.HandleFunc("/api/settings", s.handleSettings)
+	mux.HandleFunc("GET /api/instances/{namespace}/{name}/logs", s.handleInstanceLogs)
+	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
+	mux.HandleFunc("POST /api/settings", s.handleUpdateSettings)
 	mux.HandleFunc("/api/stats", s.handleStats)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 
@@ -129,7 +147,7 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
+	_, _ = w.Write([]byte("ok"))
 }
 
 func (s *Server) handleListInstances(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +165,7 @@ func (s *Server) handleListInstances(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var response []InstanceResponse
+	response := make([]InstanceResponse, 0, len(instances.Items))
 	for _, inst := range instances.Items {
 		response = append(response, mapToInstanceResponse(&inst))
 	}
@@ -168,6 +186,11 @@ func (s *Server) handleGetInstanceOrWatch(w http.ResponseWriter, r *http.Request
 
 	if pathName == "watch" {
 		s.handleWatchInstances(w, r)
+		return
+	}
+
+	if instanceName, ok := strings.CutSuffix(pathName, "/events"); ok {
+		s.handleGetEvents(w, r, instanceName)
 		return
 	}
 
@@ -285,7 +308,7 @@ func sendSSEEvent(w http.ResponseWriter, flusher http.Flusher, eventType string,
 	if err != nil {
 		return
 	}
-	fmt.Fprintf(w, "data: %s\n\n", string(bytes))
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", string(bytes))
 	flusher.Flush()
 }
 
@@ -314,7 +337,7 @@ func mapToInstanceResponse(inst *computev1.Ec2Instance) InstanceResponse {
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("DEBUG: Hit handleStatic for path: %s\n", r.URL.Path)
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("React App Placeholder"))
+	_, _ = w.Write([]byte("React App Placeholder"))
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -333,7 +356,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var cm corev1.ConfigMap
 	err := s.client.Get(ctx, client.ObjectKey{Name: "ec2-operator-ui-settings", Namespace: s.namespace}, &cm)
-	
+
 	settings := UISettings{
 		Name:       "User Name",
 		Profession: "Project Lead",
@@ -342,14 +365,23 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	if err == nil {
 		if val, ok := cm.Data["settings"]; ok {
-			json.Unmarshal([]byte(val), &settings)
+			_ = json.Unmarshal([]byte(val), &settings)
 		}
-	} else if !errors.IsNotFound(err) {
-		log.FromContext(ctx).Error(err, "Failed to get settings ConfigMap")
+	}
+
+	// Apply defaults if empty
+	if settings.Name == "" {
+		settings.Name = "User Name"
+	}
+	if settings.Profession == "" {
+		settings.Profession = "Project Lead"
+	}
+	if settings.Team == "" {
+		settings.Team = "Cloud Operations"
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(settings)
+	_ = json.NewEncoder(w).Encode(settings)
 }
 
 func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
@@ -362,6 +394,7 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	data, err := json.Marshal(settings)
 	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to encode settings")
 		http.Error(w, "Failed to encode settings", http.StatusInternalServerError)
 		return
 	}
@@ -380,32 +413,47 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	err = s.client.Get(ctx, client.ObjectKey{Name: "ec2-operator-ui-settings", Namespace: s.namespace}, &existing)
 	if err != nil {
 		if errors.IsNotFound(err) {
+			log.FromContext(ctx).Info("Creating new settings ConfigMap", "namespace", s.namespace)
 			if err := s.client.Create(ctx, cm); err != nil {
-				log.FromContext(ctx).Error(err, "Failed to create settings ConfigMap")
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				if !errors.IsAlreadyExists(err) {
+					log.FromContext(ctx).Error(err, "Failed to create settings ConfigMap", "namespace", s.namespace)
+					http.Error(w, "Failed to create settings ConfigMap", http.StatusInternalServerError)
+					return
+				}
+				// If it already exists, update below
+			} else {
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(settings)
 				return
 			}
 		} else {
-			log.FromContext(ctx).Error(err, "Failed to get existing settings ConfigMap")
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	} else {
-		existing.Data = cm.Data
-		if err := s.client.Update(ctx, &existing); err != nil {
-			log.FromContext(ctx).Error(err, "Failed to update settings ConfigMap")
+			log.FromContext(ctx).Error(err, "Failed to get existing settings ConfigMap", "namespace", s.namespace)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
 
+	// Update existing ConfigMap
+	if existing.Name == "" {
+		// Re-fetch in case of weirdness
+		_ = s.client.Get(ctx, client.ObjectKey{Name: "ec2-operator-ui-settings", Namespace: s.namespace}, &existing)
+	}
+
+	existing.Data = cm.Data
+	if err := s.client.Update(ctx, &existing); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to update settings ConfigMap", "namespace", s.namespace)
+		http.Error(w, "Failed to update settings ConfigMap", http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(settings)
+	_ = json.NewEncoder(w).Encode(settings)
 }
 
 type GlobalStats struct {
-	ReconciliationCount int64 `json:"reconciliationCount"`
-	InstanceCount       int   `json:"instanceCount"`
+	ReconciliationCount int64   `json:"reconciliationCount"`
+	InstanceCount       int     `json:"instanceCount"`
+	ApiLatency          float64 `json:"apiLatency"`
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -420,14 +468,139 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	// Get instance count from client
 	var instances computev1.Ec2InstanceList
 	if err := s.client.List(r.Context(), &instances); err != nil {
-		// fallback to 0 if list fails
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get API Latency from Prometheus histogram
+	var m2 dto.Metric
+	latency := 0.0
+	if err := controller.ApiLatency.Write(&m2); err == nil {
+		count := m2.GetHistogram().GetSampleCount()
+		if count > 0 {
+			latency = m2.GetHistogram().GetSampleSum() / float64(count)
+		}
 	}
 
 	stats := GlobalStats{
 		ReconciliationCount: reconCount,
-		InstanceCount:      len(instances.Items),
+		InstanceCount:       len(instances.Items),
+		ApiLatency:          latency * 1000, // convert to ms
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	_ = json.NewEncoder(w).Encode(stats)
+}
+func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request, name string) {
+	ctx := r.Context()
+	namespace := r.URL.Query().Get("namespace")
+	if namespace == "" {
+		namespace = "default"
+	}
+
+	// Fetch events for this specific object
+	var eventList corev1.EventList
+
+	// Create a selector for events involved with this specific Ec2Instance
+	// The involvedObject.kind is Ec2Instance, and name is the instance name.
+	listOpts := []client.ListOption{
+		client.InNamespace(namespace),
+		client.MatchingFields{
+			"involvedObject.name": name,
+			"involvedObject.kind": "Ec2Instance",
+		},
+	}
+
+	if err := s.client.List(ctx, &eventList, listOpts...); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list events")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var events []EventResponse
+	for _, event := range eventList.Items {
+		events = append(events, EventResponse{
+			Type:    event.Type,
+			Reason:  event.Reason,
+			Message: event.Message,
+			Time:    event.CreationTimestamp.Time,
+			Age:     duration.HumanDuration(time.Since(event.CreationTimestamp.Time)),
+			Object:  event.InvolvedObject.Kind + "/" + event.InvolvedObject.Name,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(events)
+}
+
+func (s *Server) handleInstanceLogs(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/instances/"), "/")
+	if len(parts) != 3 || parts[2] != "logs" {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	namespace := parts[0]
+	name := parts[1]
+
+	// 1. Get operator pods
+	pods, err := s.clientset.CoreV1().Pods(s.namespace).List(r.Context(), metav1.ListOptions{
+		LabelSelector: "control-plane=controller-manager",
+	})
+	if err != nil || len(pods.Items) == 0 {
+		http.Error(w, "operator pod not found", http.StatusInternalServerError)
+		return
+	}
+
+	podName := pods.Items[0].Name
+
+	// 2. Fetch logs
+	tailLines := int64(1000)
+	req := s.clientset.CoreV1().Pods(s.namespace).GetLogs(podName, &corev1.PodLogOptions{
+		Container: "manager",
+		TailLines: &tailLines,
+	})
+	podLogs, err := req.Stream(r.Context())
+	if err != nil {
+		log.FromContext(r.Context()).Error(err, "failed to stream logs")
+		http.Error(w, "failed to stream logs", http.StatusInternalServerError)
+		return
+	}
+	defer podLogs.Close()
+
+	var logs []LogResponse
+	scanner := bufio.NewScanner(podLogs)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Filter by namespace and name
+		if strings.Contains(line, name) && strings.Contains(line, namespace) {
+			var logLine struct {
+				Level string `json:"level"`
+				TS    string `json:"ts"`
+				Msg   string `json:"msg"`
+			}
+			err := json.Unmarshal([]byte(line), &logLine)
+			if err == nil {
+				logs = append(logs, LogResponse{
+					Timestamp: logLine.TS,
+					Level:     logLine.Level,
+					Message:   logLine.Msg,
+					Raw:       line,
+				})
+			} else {
+				logs = append(logs, LogResponse{
+					Timestamp: "",
+					Level:     "info",
+					Message:   line,
+					Raw:       line,
+				})
+			}
+		}
+	}
+
+	if logs == nil {
+		logs = []LogResponse{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(logs)
 }

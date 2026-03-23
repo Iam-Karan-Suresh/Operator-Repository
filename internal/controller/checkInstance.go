@@ -21,7 +21,10 @@ func checkEC2InstanceExists(ctx context.Context, instanceID string, ec2Instance 
 	))
 	defer span.End()
 
-	ec2Client := awsClient(ec2Instance.Spec.Region)
+	ec2Client, err := awsClient(ctx, ec2Instance.Spec.Region)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to initialize AWS client: %w", err)
+	}
 
 	input := &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceID},

@@ -20,3 +20,19 @@ export interface WatchEvent {
   type: 'ADDED' | 'MODIFIED' | 'DELETED';
   object: InstanceResponse;
 }
+
+export interface EventResponse {
+  type: string;
+  reason: string;
+  message: string;
+  time: string;
+  age: string;
+  object: string;
+}
+
+export interface LogResponse {
+  timestamp: string;
+  level: string;
+  message: string;
+  raw: string;
+}
