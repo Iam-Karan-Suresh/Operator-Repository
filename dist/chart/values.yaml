@@ -1,10 +1,11 @@
 # [MANAGER]: Manager Deployment Configurations
 controllerManager:
   replicas: 1
+  imagePullSecrets: []
   container:
     image:
       repository: ghcr.io/iam-karan-suresh/ec2-operator-manager
-      tag: v1.0.3
+      tag: v1.0.5
     imagePullPolicy: IfNotPresent
     args:
       - "--leader-elect"

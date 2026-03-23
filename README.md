@@ -42,6 +42,17 @@ Deploy the operator, dashboard, and full observability stack with a single comma
 # From the root of the repository
 helm upgrade --install operator dist/chart/
 ```
+## install via helm
+
+```bash
+helm install ec2-operator oci://ghcr.io/iam-karan-suresh/charts/ec2-operator --version 1.0.4 -n operator-system --values dist/chart/values.yaml --create-namespace
+```
+
+```bash
+helm upgrade ec2-operator oci://ghcr.io/iam-karan-suresh/charts/ec2-operator --version 1.0.5 -n operator-system --set "controllerManager.imagePullSecrets[0].name=ghcr-pull-secret" --values dist/chart/values.yaml
+```
+
+
 
 ### 4. Access the Dashboard
 Expose the dashboard service to your local machine:
@@ -54,7 +65,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 for logs of operator
 
 ```bash
-kubectl logs -n operator-system operator-controller-manager-6b458f9767-t7xmv -c manager
+ kubectl logs -n operator-system -l control-plane=controller-manager -c manager --tail=50
 
 ```
 
@@ -64,6 +75,32 @@ kubectl logs -n operator-system operator-controller-manager-6b458f9767-t7xmv -c 
 - **Drift Detection**: Automatically syncs Kubernetes state with AWS changes.
 - **Full Observability**: Integrated Prometheus, Grafana, Jaeger (Tracing), and OpenCost.
 - **Personalized Experience**: Save your name and team preferences directly to the cluster.
+
+## 🔌 Frontend UI Architecture & Real-Time Updates
+
+The dashboard provides a seamless, real-time view of EC2 instances without requiring manual refreshes.
+
+### 🏗 Data Flow Architecture
+1. **Kubernetes API Watch**: The backend dashboard server (written in Go) manages a persistent connection to the Kubernetes API.
+2. **Server-Sent Events (SSE)**: Instead of traditional polling from the browser, we use a single long-lived HTTP connection (`/api/instances/watch`) to stream updates using Server-Sent Events.
+3. **State Comparison Engine**:
+   - The backend polls the Kubernetes API for `Ec2Instance` resources every **2 seconds**.
+   - It maintains a `previousState` map for each connected client session.
+   - It performs a deep comparison between the cluster state and the previous state to detect `ADDED`, `MODIFIED`, or `DELETED` events.
+4. **React State Reconciliation**:
+   - The `useInstances` hook in the React frontend maintains the global `instances` state.
+   - When a `WatchEvent` is received over SSE, the hook performs an incremental update to the state array.
+   - React automatically re-renders only the necessary UI components, ensuring smooth transitions and animations.
+
+### 📡 Technical Stack
+- **Streaming Protocol**: Server-Sent Events (SSE) for low-overhead, one-way streaming.
+- **Backend**: Go `net/http` with `http.Flusher` for immediate data transmission.
+- **Frontend**: React Hooks (`useEffect`, `useCallback`) and the native `EventSource` API.
+
+### 🛠 Key Files for Developers
+- **Backend Logic**: `internal/dashboard/handlers.go` (see `handleWatchInstances`)
+- **API Client**: `web/src/api/client.ts`
+- **Frontend Hook**: `web/src/hooks/useInstances.ts`
 
 ## 📖 Component Documentation
 - [Operator Architecture & Flow](docs/OPERATOR.md)
