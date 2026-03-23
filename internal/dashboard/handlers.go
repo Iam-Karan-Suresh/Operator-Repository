@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +25,7 @@ import (
 )
 
 const (
-	DefaultNamespace = "default"
+	DefaultNamespace = "operator-system"
 )
 
 type UISettings struct {
@@ -88,9 +89,9 @@ func (s *Server) StartWithFS(ctx context.Context, f fs.FS) error {
 	// API Routes
 	mux.HandleFunc("/api/instances", s.handleListInstances)
 	mux.HandleFunc("/api/instances/", s.handleGetInstanceOrWatch) // prefixes with GET /api/instances/{name} or /api/instances/watch
-	// Note: Standard net/http multiplexer doesn't support named parameters like {namespace} easily 
+	// Note: Standard net/http multiplexer doesn't support named parameters like {namespace} easily
 	// without a router library or custom logic. For this embedded dashboard, we use simple prefix matching.
-	mux.HandleFunc("/api/logs/", s.handleInstanceLogsLegacy)      // Compatibility route
+	mux.HandleFunc("/api/logs/", s.handleInstanceLogsLegacy) // Compatibility route
 	mux.HandleFunc("GET /api/instances/{namespace}/{name}/logs", s.handleInstanceLogs)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("POST /api/settings", s.handleUpdateSettings)
@@ -327,6 +328,32 @@ func mapToInstanceResponse(inst *computev1.Ec2Instance) InstanceResponse {
 		Tags:             inst.Spec.Tags,
 		CreatedAt:        inst.CreationTimestamp.Time,
 		Age:              age,
+		Storage:          mapStorage(inst.Spec.Storage),
+	}
+}
+
+func mapStorage(cfg computev1.StorageConfig) StorageResponse {
+	root := VolumeResponse{
+		Size:       cfg.RootVolume.Size,
+		Type:       cfg.RootVolume.Type,
+		DeviceName: cfg.RootVolume.DeviceName,
+	}
+
+	additional := make([]VolumeResponse, 0, len(cfg.AdditionalVolumes))
+	total := root.Size
+	for _, v := range cfg.AdditionalVolumes {
+		total += v.Size
+		additional = append(additional, VolumeResponse{
+			Size:       v.Size,
+			Type:       v.Type,
+			DeviceName: v.DeviceName,
+		})
+	}
+
+	return StorageResponse{
+		TotalSize:         total,
+		RootVolume:        root,
+		AdditionalVolumes: additional,
 	}
 }
 
@@ -431,6 +458,7 @@ type GlobalStats struct {
 	ReconciliationCount int64   `json:"reconciliationCount"`
 	InstanceCount       int     `json:"instanceCount"`
 	ApiLatency          float64 `json:"apiLatency"`
+	TotalStorage        int64   `json:"totalStorage"`
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -456,14 +484,125 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	totalStorage := int64(0)
+	for _, inst := range instances.Items {
+		totalStorage += int64(inst.Spec.Storage.RootVolume.Size)
+		for _, v := range inst.Spec.Storage.AdditionalVolumes {
+			totalStorage += int64(v.Size)
+		}
+	}
+
+	if reconCount == 0 || latency == 0 {
+		remoteRecon, remoteLatency, err := s.fetchRemoteMetrics(r.Context())
+		if err == nil {
+			if remoteRecon > 0 {
+				reconCount = remoteRecon
+			}
+			if remoteLatency > 0 {
+				latency = remoteLatency
+			}
+		}
+	}
+
 	stats := GlobalStats{
 		ReconciliationCount: reconCount,
 		InstanceCount:       len(instances.Items),
 		ApiLatency:          latency * 1000, // convert to ms
+		TotalStorage:        totalStorage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(stats)
+}
+func (s *Server) fetchRemoteMetrics(ctx context.Context) (int64, float64, error) {
+	if s.clientset == nil {
+		return 0, 0, fmt.Errorf("clientset not available")
+	}
+
+	// Find operator pod
+	log.FromContext(ctx).Info("Attempting to find operator pod for remote metrics", "namespace", s.namespace)
+	pods, err := s.clientset.CoreV1().Pods(s.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "control-plane=controller-manager",
+	})
+	if err != nil || len(pods.Items) == 0 {
+		// Try operator-system namespace if current one fails
+		if s.namespace != "operator-system" {
+			pods, err = s.clientset.CoreV1().Pods("operator-system").List(ctx, metav1.ListOptions{
+				LabelSelector: "control-plane=controller-manager",
+			})
+		}
+	}
+
+	if err != nil || len(pods.Items) == 0 {
+		return 0, 0, fmt.Errorf("operator pod not found")
+	}
+
+	podName := pods.Items[0].Name
+	podNamespace := pods.Items[0].Namespace
+	log.FromContext(ctx).Info("Found operator pod, proxying to metrics", "pod", podName, "namespace", podNamespace)
+
+	// Proxy to metrics port (default 8080 or service port 8443)
+	// Usually controller-runtime metrics are on 8080 inside the pod
+	data, err := s.clientset.CoreV1().RESTClient().Get().
+		Namespace(podNamespace).
+		Resource("pods").
+		SubResource("proxy").
+		Name(fmt.Sprintf("%s:8080", podName)).
+		Suffix("metrics").
+		DoRaw(ctx)
+
+	if err != nil {
+		// Try 8443 if 8080 fails
+		data, err = s.clientset.CoreV1().RESTClient().Get().
+			Namespace(podNamespace).
+			Resource("pods").
+			SubResource("proxy").
+			Name(fmt.Sprintf("%s:8443", podName)).
+			Suffix("metrics").
+			DoRaw(ctx)
+	}
+
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to proxy to remote metrics")
+		return 0, 0, err
+	}
+
+	log.FromContext(ctx).Info("Successfully fetched remote metrics, parsing...", "bytes", len(data))
+
+	var reconCount int64
+	var latencySum float64
+	var latencyCount int64
+
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "ec2_operator_reconciliation_total") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				val, _ := strconv.ParseInt(parts[1], 10, 64)
+				reconCount = val
+			}
+		} else if strings.HasPrefix(line, "ec2_operator_api_latency_seconds_sum") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				val, _ := strconv.ParseFloat(parts[1], 64)
+				latencySum = val
+			}
+		} else if strings.HasPrefix(line, "ec2_operator_api_latency_seconds_count") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				val, _ := strconv.ParseInt(parts[1], 10, 64)
+				latencyCount = val
+			}
+		}
+	}
+
+	avgLatency := 0.0
+	if latencyCount > 0 {
+		avgLatency = latencySum / float64(latencyCount)
+	}
+
+	return reconCount, avgLatency, nil
 }
 
 func (s *Server) handleGetEvents(w http.ResponseWriter, r *http.Request, name string) {
@@ -545,7 +684,7 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request, namespace str
 		http.Error(w, "failed to stream logs", http.StatusInternalServerError)
 		return
 	}
-	defer podLogs.Close()
+	defer func() { _ = podLogs.Close() }()
 
 	var logs []LogResponse
 	scanner := bufio.NewScanner(podLogs)

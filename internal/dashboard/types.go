@@ -19,6 +19,21 @@ type InstanceResponse struct {
 	Tags             map[string]string `json:"tags,omitempty"`
 	CreatedAt        time.Time         `json:"createdAt"`
 	Age              string            `json:"age"`
+	Storage          StorageResponse   `json:"storage,omitempty"`
+}
+
+// StorageResponse represents the storage configuration for the UI
+type StorageResponse struct {
+	TotalSize         int32            `json:"totalSize"`
+	RootVolume        VolumeResponse   `json:"rootVolume"`
+	AdditionalVolumes []VolumeResponse `json:"additionalVolumes,omitempty"`
+}
+
+// VolumeResponse represents a single volume for the UI
+type VolumeResponse struct {
+	Size       int32  `json:"size"`
+	Type       string `json:"type"`
+	DeviceName string `json:"deviceName"`
 }
 
 // WatchEvent represents an SSE event sent to the frontend

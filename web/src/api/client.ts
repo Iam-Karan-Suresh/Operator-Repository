@@ -1,6 +1,6 @@
 import type { InstanceResponse, EventResponse, LogResponse } from '../types/instance';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const fetchInstances = async (): Promise<InstanceResponse[]> => {
   const response = await fetch(`${API_BASE_URL}/instances`);

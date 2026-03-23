@@ -35,24 +35,34 @@ awsCredentials:
   region: "us-east-1"
 ```
 
-### 3. Deploy the Stack
-Deploy the operator, dashboard, and full observability stack with a single command:
+### 3. Deploy via OCI Registry (Global)
+Install the operator directly from the GitHub Container Registry:
 
 ```bash
-# From the root of the repository
-helm upgrade --install operator dist/chart/
-```
-## install via helm
+# Add namespace
+kubectl create namespace operator-system
 
+# Install the operator and observability stack
+helm install ec2-operator oci://ghcr.io/iam-karan-suresh/charts/ec2-operator \
+  --version 1.0.8 \
+  -n operator-system \
+  --create-namespace \
+  --set awsCredentials.accessKeyId="YOUR_ACCESS_KEY" \
+  --set awsCredentials.secretAccessKey="YOUR_SECRET_KEY"
+```
+
+### 4. Upgrade an Existing Installation
 ```bash
-helm install ec2-operator oci://ghcr.io/iam-karan-suresh/charts/ec2-operator --version 1.0.4 -n operator-system --values dist/chart/values.yaml --create-namespace
+helm upgrade ec2-operator oci://ghcr.io/iam-karan-suresh/charts/ec2-operator \
+  --version 1.0.8 \
+  -n operator-system
 ```
 
-```bash
-helm upgrade ec2-operator oci://ghcr.io/iam-karan-suresh/charts/ec2-operator --version 1.0.5 -n operator-system --set "controllerManager.imagePullSecrets[0].name=ghcr-pull-secret" --values dist/chart/values.yaml
-```
-
-
+kubectl create secret docker-registry ghcr-pull-secret \
+  --docker-server=ghcr.io \
+  --docker-username="<YOUR_GITHUB_USERNAME>" \
+  --docker-password="<YOUR_GITHUB_TOKEN>" \
+  -n operator-system
 
 ### 4. Access the Dashboard
 Expose the dashboard service to your local machine:

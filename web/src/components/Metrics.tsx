@@ -7,10 +7,11 @@ interface Stats {
   reconciliationCount: number;
   instanceCount: number;
   apiLatency: number;
+  totalStorage: number;
 }
 
 export function Metrics() {
-  const [stats, setStats] = useState<Stats>({ reconciliationCount: 0, instanceCount: 0, apiLatency: 0 });
+  const [stats, setStats] = useState<Stats>({ reconciliationCount: 0, instanceCount: 0, apiLatency: 0, totalStorage: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -63,7 +64,12 @@ export function Metrics() {
           value={loading ? "..." : `${stats.apiLatency.toFixed(1)}ms`} 
           change={stats.apiLatency > 50 ? "High" : "Optimal"} 
         />
-        <MetricCard icon={<HardDrive />} title="Total Storage" value="500 GB" change="+50 GB" />
+        <MetricCard 
+          icon={<HardDrive />} 
+          title="Total Storage" 
+          value={loading ? "..." : `${stats.totalStorage} GB`} 
+          change="Disk" 
+        />
       </div>
 
       <div className="mt-8 glass rounded-xl p-8 border border-border flex flex-col items-center justify-center text-center min-h-[300px]">

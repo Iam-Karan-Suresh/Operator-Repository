@@ -62,7 +62,11 @@ func createEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) 
 	}
 
 	// Storage configuration
-	var blockDeviceMappings []ec2types.BlockDeviceMapping
+	cap := 1
+	if len(ec2Instance.Spec.Storage.AdditionalVolumes) > 0 {
+		cap += len(ec2Instance.Spec.Storage.AdditionalVolumes)
+	}
+	blockDeviceMappings := make([]ec2types.BlockDeviceMapping, 0, cap)
 
 	// Root volume
 	if ec2Instance.Spec.Storage.RootVolume.Size > 0 {

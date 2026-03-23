@@ -1,0 +1,16 @@
+apiVersion: compute.cloud.com/v1
+kind: Ec2Instance
+metadata:
+  name: ec2instance-sample-ui-test
+spec:
+  amiId: "ami-0c55b159cbfafe1f0"
+  instanceType: "t2.micro"
+  region: "us-east-1"
+  storage:
+    rootVolume:
+      size: 8
+      type: "gp2"
+      encrypted: true
+  tags:
+    Environment: "dev"
+    Project: "ui-test"

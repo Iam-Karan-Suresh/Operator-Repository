@@ -14,6 +14,19 @@ export interface InstanceResponse {
   tags?: Record<string, string>;
   createdAt: string;
   age: string;
+  storage?: {
+    totalSize: number;
+    rootVolume: {
+      size: number;
+      type: string;
+      deviceName: string;
+    };
+    additionalVolumes?: {
+      size: number;
+      type: string;
+      deviceName: string;
+    }[];
+  };
 }
 
 export interface WatchEvent {

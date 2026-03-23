@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { Package } from 'lucide-react';
 import type { InstanceResponse, EventResponse, LogResponse } from '../types/instance';
 import { StatusBadge } from './StatusBadge';
 import { LifecycleTimeline } from './LifecycleTimeline';
 import { 
   ArrowLeft, 
-  Server, 
   Cpu, 
   Terminal, 
   Key, 
@@ -178,6 +178,43 @@ export function InstanceDetail({ instance, onBack, onRefresh, refreshing }: Inst
               <DetailItem label="Private IP" value={instance.privateIP || 'Pending'} copyable={!!instance.privateIP} />
               <DetailItem label="Public DNS" value={instance.publicDNS || 'None'} copyable={!!instance.publicDNS} />
               <DetailItem label="Private DNS" value={instance.privateDNS || 'Pending'} copyable={!!instance.privateDNS} />
+            </div>
+          </div>
+
+          {/* Storage Card */}
+          <div className="glass rounded-xl p-6 border-border/50">
+            <h2 className="text-lg font-semibold border-b border-border/50 pb-4 mb-5 flex items-center">
+              <Package className="w-5 h-5 mr-2 text-primary" />
+              Block Storage
+            </h2>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-primary/5 rounded-lg border border-primary/10">
+                <div className="flex items-center">
+                  <Package className="w-4 h-4 mr-2 text-primary" />
+                  <span className="text-sm font-medium">Root Volume</span>
+                </div>
+                <span className="text-sm font-bold text-primary">{instance.storage?.rootVolume?.size} GB ({instance.storage?.rootVolume?.type || 'gp3'})</span>
+              </div>
+              
+              {instance.storage?.additionalVolumes && instance.storage.additionalVolumes.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Additional Volumes</p>
+                  {instance.storage.additionalVolumes.map((vol, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/50">
+                      <div className="flex items-center">
+                        <Package className="w-4 h-4 mr-2 text-muted-foreground" />
+                        <span className="text-sm">{vol.deviceName || `/dev/sd${String.fromCharCode(98 + idx)}`}</span>
+                      </div>
+                      <span className="text-sm font-medium">{vol.size} GB ({vol.type || 'gp3'})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-between items-center text-xs text-muted-foreground px-1">
+                <span>Total Provisioned Capacity</span>
+                <span className="font-bold text-foreground">{instance.storage?.totalSize || instance.storage?.rootVolume?.size || 0} GB</span>
+              </div>
             </div>
           </div>
 

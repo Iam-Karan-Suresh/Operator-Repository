@@ -1,15 +1,17 @@
 # [MANAGER]: Manager Deployment Configurations
 controllerManager:
   replicas: 1
-  imagePullSecrets: []
+  imagePullSecrets:
+    - name: ghcr-pull-secret
   container:
     image:
-      repository: ghcr.io/iam-karan-suresh/ec2-operator-manager
-      tag: v1.0.5
+      repository: ghcr.io/iam-karan-suresh/operator-repo
+      tag: v1.0.8
     imagePullPolicy: IfNotPresent
     args:
       - "--leader-elect"
-      - "--metrics-bind-address=:8443"
+      - "--metrics-bind-address=:8080"
+      - "--metrics-secure=false"
       - "--health-probe-bind-address=:8081"
     resources:
       limits:
@@ -48,7 +50,7 @@ dashboard:
   replicas: 1
   image:
     repository: docker.io/karanwebdev/ec2-dashboard
-    tag: latest
+    tag: v1.0.8
   imagePullPolicy: IfNotPresent
   port: 3000
   resources:
