@@ -43,6 +43,7 @@ rules:
       - pods/proxy
       - pods/log
       - events
+      - nodes
     verbs:
       - get
       - list

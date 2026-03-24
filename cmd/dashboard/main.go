@@ -70,6 +70,9 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	go func() {
+		// Run the dashboard cost service sync routine
+		dashServer.GetCostService().StartSync(ctx)
+
 		// As a standalone binary, we'll let the dashboard server itself just run
 		// But we need to inject the static file serving logic into the handler
 		// Since we didn't inject the FS into the server struct, we'll just let

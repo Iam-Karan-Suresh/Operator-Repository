@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useInstances } from '../hooks/useInstances';
+import { useAllCosts } from '../hooks/useCosts';
 import { InstanceCard } from './InstanceCard';
-import { Search, Loader2, RefreshCw, Filter, DollarSign, Play, Square, Trash2 } from 'lucide-react';
+import { Search, Loader2, RefreshCw, Filter, DollarSign, Play, Square, Trash2, Info } from 'lucide-react';
 import { cn } from '../utils';
 
 interface InstanceListProps {
@@ -10,25 +11,17 @@ interface InstanceListProps {
   refreshing: boolean;
 }
 
-const COST_MAP: Record<string, number> = {
-  't3.micro': 7.60,
-  't3.small': 15.20,
-  't3.medium': 30.40,
-  'm5.large': 70.08,
-};
-
 export function InstanceList({ onSelectInstance, onRefresh, refreshing }: InstanceListProps) {
   const { instances, loading, error } = useInstances();
+  const { costs } = useAllCosts();
   const [searchTerm, setSearchTerm] = useState('');
   const [regionFilter, setRegionFilter] = useState('all');
   const [stateFilter, setStateFilter] = useState('all');
   const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
 
   const estimatedMonthlyCost = useMemo(() => {
-    return instances.filter(i => i.state === 'running' || i.state === 'pending').reduce((total, inst) => {
-      return total + (COST_MAP[inst.instanceType] || 15.00); 
-    }, 0);
-  }, [instances]);
+    return costs.reduce((total, cost) => total + cost.monthlyCost, 0);
+  }, [costs]);
 
   const filteredInstances = useMemo(() => {
     return instances.filter(i => {
@@ -74,11 +67,18 @@ export function InstanceList({ onSelectInstance, onRefresh, refreshing }: Instan
           <p className="text-muted-foreground mt-1">Manage your operator-provisioned EC2 instances.</p>
         </div>
         
-        <div className="flex items-center gap-4 bg-primary/10 text-primary px-4 py-2 rounded-lg border border-primary/20">
+        <div className="flex items-center gap-4 bg-primary/10 text-primary px-4 py-2 rounded-lg border border-primary/20 relative group">
           <DollarSign size={20} />
           <div>
-            <p className="text-xs uppercase font-bold tracking-wider opacity-80">Est. Monthly Cost</p>
+            <p className="text-xs uppercase font-bold tracking-wider opacity-80 flex items-center">
+              Est. Monthly Cost
+              <Info size={12} className="ml-1 text-muted-foreground group-hover:text-primary transition-colors" />
+            </p>
             <p className="text-lg font-bold">${estimatedMonthlyCost.toFixed(2)}</p>
+          </div>
+          {/* Tooltip */}
+          <div className="absolute top-full mt-2 w-48 opacity-0 group-hover:opacity-100 transition-opacity invisible group-hover:visible bg-card border border-border shadow-xl rounded-lg p-2 text-xs text-muted-foreground z-50">
+            Calculated dynamically via OpenCost mapping Kubernetes Nodes to EC2 pricing.
           </div>
         </div>
       </div>
@@ -162,6 +162,7 @@ export function InstanceList({ onSelectInstance, onRefresh, refreshing }: Instan
             <InstanceCard 
               key={`${instance.namespace}-${instance.name}`} 
               instance={instance} 
+              costData={costs.find(c => c.instanceId === instance.instanceID)}
               onClick={() => onSelectInstance(instance.name, instance.namespace)}
               selected={selectedInstances.has(`${instance.namespace}/${instance.name}`)}
               onToggleSelect={(e) => handleToggleSelect(`${instance.namespace}/${instance.name}`, e)}
