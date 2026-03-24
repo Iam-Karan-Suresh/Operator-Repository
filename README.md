@@ -147,4 +147,3 @@ For more internal details, refer to:
 - [Changelog & Evolution](docs/CHANGELOG.md)
 
 ---
-Built by **Antigravity Team**
