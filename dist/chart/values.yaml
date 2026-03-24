@@ -49,7 +49,7 @@ dashboard:
   enable: true
   replicas: 1
   image:
-    repository: docker.io/karanwebdev/ec2-operator-dashboard
+    repository: docker.io/karanwebdev/ec2-dashboard
     tag: 1.1.1
   imagePullPolicy: IfNotPresent
   port: 3000
