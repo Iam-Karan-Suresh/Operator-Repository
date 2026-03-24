@@ -26,7 +26,7 @@ awsCredentials:
 ```bash
 kubectl create secret generic aws-credentials \
   --from-literal=AWS_ACCESS_KEY_ID=YOUR_ACCESS_KEY \
-  --from-literal=AWS_SECRET_ACCESS_KEY=YOUR_SECRET_KEY
+  --from-literal=AWS_SECRET_ACCESS_KEY=YOUR_SECRET_KEY -n operator-system
 ```
 2. Update `dist/chart/values.yaml` to use the secret:
 ```yaml
