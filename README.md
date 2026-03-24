@@ -47,6 +47,7 @@ helm install ec2-operator oci://ghcr.io/iam-karan-suresh/charts/ec2-operator \
   --version 1.1.1 \
   -n operator-system \
   --create-namespace \
+  -f ./dist/chart/values.yaml
   --set awsCredentials.accessKeyId="YOUR_ACCESS_KEY" \
   --set awsCredentials.secretAccessKey="YOUR_SECRET_KEY"
 ```
