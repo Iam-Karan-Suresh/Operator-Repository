@@ -7,22 +7,21 @@ The EC2 Instance Operator is built on the **Operator Pattern**, extending the Ku
 ```mermaid
 graph TD
     subgraph "Kubernetes Cluster"
-        A[User / kubectl] --> B[API Server]
-        B <--> C[EC2 Instance Operator]
-        C --> D[Dashboard Backend (Go)]
-        D <--> E[React Frontend (Vite)]
-        F[Prometheus] <--> C
-        G[Grafana] <--> F
-        H[Jaeger] <--> C
-        C <--> I[OpenCost]
+        A["User / kubectl"] --> B["API Server"]
+        B --- C["EC2 Instance Operator"]
+        C --> D["Dashboard Backend (Go)"]
+        D --- E["React Frontend (Vite)"]
+        F["Prometheus"] --- C
+        G["Grafana"] --- F
+        H["Jaeger"] --- C
+        C --- I["OpenCost"]
     end
     
     subgraph "AWS Cloud"
-        C <--> J[EC2 Service]
-        C <--> K[STS / IAM]
+        C --- J["EC2 Service"]
+        C --- K["STS / IAM"]
     end
 
-    E <--> D
     D -- "SSE Stream" --> E
 ```
 
