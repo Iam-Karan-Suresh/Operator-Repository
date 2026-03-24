@@ -61,6 +61,8 @@ spec:
             - name: AWS_SECRET_ACCESS_KEY
               value: {{ .Values.awsCredentials.secretAccessKey }}
             {{- end }}
+            - name: OPENCOST_URL
+              value: "http://{{ .Release.Name }}-opencost.{{ .Release.Namespace }}.svc.cluster.local:9003"
             - name: AWS_EC2_METADATA_DISABLED
               value: "true"
             - name: POD_NAMESPACE

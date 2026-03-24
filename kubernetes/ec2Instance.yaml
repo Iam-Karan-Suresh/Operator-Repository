@@ -31,12 +31,6 @@ spec:
 
   storage:
     rootVolume:
-      size: 18
+      size: 8
       type: gp3
       encrypted: true
-
-    additionalVolumes:
-      - size: 5
-        type: gp3
-        deviceName: /dev/sdf
-        encrypted: true

@@ -49,3 +49,13 @@ export interface LogResponse {
   message: string;
   raw: string;
 }
+
+export interface InstanceCostData {
+  instanceId: string;
+  node: string;
+  instanceType: string;
+  region: string;
+  dailyCost: number;
+  monthlyCost: number;
+  state: string;
+}

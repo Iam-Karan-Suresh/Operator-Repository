@@ -44,7 +44,7 @@ kubectl create namespace operator-system
 
 # Install the operator and observability stack
 helm install ec2-operator oci://ghcr.io/iam-karan-suresh/charts/ec2-operator \
-  --version 1.0.8 \
+  --version 1.1.1 \
   -n operator-system \
   --create-namespace \
   --set awsCredentials.accessKeyId="YOUR_ACCESS_KEY" \
@@ -54,9 +54,15 @@ helm install ec2-operator oci://ghcr.io/iam-karan-suresh/charts/ec2-operator \
 ### 4. Upgrade an Existing Installation
 ```bash
 helm upgrade ec2-operator oci://ghcr.io/iam-karan-suresh/charts/ec2-operator \
-  --version 1.0.8 \
+  --version 1.1.1 \
   -n operator-system
 ```
+
+docker build -t docker.io/karanwebdev/ec2-dashboard:v1.1.1 -f Dockerfile.dashboard . && docker push docker.io/karanwebdev/ec2-dashboard:v1.1.1
+
+
+helm package dist/chart && helm push ec2-operator-1.1.1.tgz oci://ghcr.io/iam-karan-suresh/ec2-operator
+
 
 kubectl create secret docker-registry ghcr-pull-secret \
   --docker-server=ghcr.io \

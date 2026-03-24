@@ -1,17 +1,18 @@
 import React from 'react';
-import type { InstanceResponse } from '../types/instance';
+import type { InstanceResponse, InstanceCostData } from '../types/instance';
 import { StatusBadge } from './StatusBadge';
-import { Server, Cpu, HardDrive, Globe, Clock, ArrowRight } from 'lucide-react';
+import { Server, Cpu, HardDrive, Globe, Clock, ArrowRight, DollarSign } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 interface InstanceCardProps {
   instance: InstanceResponse;
+  costData?: InstanceCostData;
   onClick: () => void;
   selected: boolean;
   onToggleSelect: (e: React.MouseEvent | React.ChangeEvent) => void;
 }
 
-export function InstanceCard({ instance, onClick, selected, onToggleSelect }: InstanceCardProps) {
+export function InstanceCard({ instance, costData, onClick, selected, onToggleSelect }: InstanceCardProps) {
   return (
     <div 
       onClick={onClick}
@@ -49,6 +50,17 @@ export function InstanceCard({ instance, onClick, selected, onToggleSelect }: In
       </div>
 
       <div className="grid grid-cols-2 gap-y-3 gap-x-4 mt-6 text-sm relative z-10">
+        <div className="flex items-center text-muted-foreground group/tooltip">
+          <DollarSign size={14} className="mr-2 text-emerald-500/70" />
+          {costData ? (
+             <span className="truncate font-medium">${costData.monthlyCost.toFixed(2)}/mo</span>
+          ) : (
+             <div className="h-4 w-16 bg-muted animate-pulse rounded" />
+          )}
+          <div className="absolute left-0 bottom-full mb-1 opacity-0 group-hover/tooltip:opacity-100 transition-opacity bg-background border border-border px-2 py-1 rounded text-[10px] invisible group-hover/tooltip:visible z-50 whitespace-nowrap">
+            Powered by OpenCost
+          </div>
+        </div>
         <div className="flex items-center text-muted-foreground">
           <Cpu size={14} className="mr-2 opacity-70" />
           <span className="truncate">{instance.instanceType}</span>

@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -273,13 +274,19 @@ func main() {
 		}
 
 		dashServer := dashboard.NewServer(mgr.GetClient(), clientset, dashboardPort)
-		// We use a custom wrapper or just call StartWithFS if we want to bypass the default Start
-		// But since mgr.Add(dashServer) calls dashServer.Start(ctx), we need a way to inject the FS.
-		// Let's add a SetStaticFS method or just use a different constructor.
 		dashServer.SetStaticFS(staticFS)
 
 		if err := mgr.Add(dashServer); err != nil {
 			setupLog.Error(err, "unable to add dashboard server to manager")
+			os.Exit(1)
+		}
+
+		// Start the background cost sync goroutine via the manager's lifecycle
+		if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+			dashServer.GetCostService().StartSync(ctx)
+			return nil
+		})); err != nil {
+			setupLog.Error(err, "unable to add cost sync to manager")
 			os.Exit(1)
 		}
 	}

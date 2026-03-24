@@ -46,6 +46,7 @@ type Server struct {
 	port      string
 	namespace string
 	staticFS  fs.FS
+	costSvc   *CostService
 }
 
 func NewServer(mgrClient client.Client, clientset *kubernetes.Clientset, port string) *Server {
@@ -59,7 +60,13 @@ func NewServer(mgrClient client.Client, clientset *kubernetes.Clientset, port st
 		clientset: clientset,
 		port:      port,
 		namespace: ns,
+		costSvc:   NewCostService(mgrClient, clientset),
 	}
+}
+
+// GetCostService returns the server's cost service
+func (s *Server) GetCostService() *CostService {
+	return s.costSvc
 }
 
 // SetNamespace sets the namespace for the dashboard settings
@@ -96,6 +103,8 @@ func (s *Server) StartWithFS(ctx context.Context, f fs.FS) error {
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("POST /api/settings", s.handleUpdateSettings)
 	mux.HandleFunc("/api/stats", s.handleStats)
+	mux.HandleFunc("/api/cost/instances", s.handleListCosts)
+	mux.HandleFunc("/api/cost/instances/", s.handleGetCost) // for specific instance ID
 	mux.HandleFunc("/healthz", s.handleHealthz)
 
 	// Static File handling
@@ -720,4 +729,37 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request, namespace str
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(logs)
+}
+
+func (s *Server) handleListCosts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	costs := s.costSvc.GetAllCosts()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(costs)
+}
+
+func (s *Server) handleGetCost(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	instanceID := strings.TrimPrefix(r.URL.Path, "/api/cost/instances/")
+	if instanceID == "" {
+		http.Error(w, "Instance ID required", http.StatusBadRequest)
+		return
+	}
+
+	cost := s.costSvc.GetCost(instanceID)
+	if cost == nil {
+		http.Error(w, "Cost tracking not available yet", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(cost)
 }

@@ -37,3 +37,19 @@ export const fetchInstanceLogs = async (name: string, namespace: string = 'defau
   }
   return response.json();
 };
+
+export const fetchAllCosts = async (): Promise<import('../types/instance').InstanceCostData[]> => {
+  const response = await fetch(`${API_BASE_URL}/cost/instances`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch costs');
+  }
+  return response.json();
+};
+
+export const fetchInstanceCost = async (instanceId: string): Promise<import('../types/instance').InstanceCostData> => {
+  const response = await fetch(`${API_BASE_URL}/cost/instances/${instanceId}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch instance cost');
+  }
+  return response.json();
+};

@@ -108,7 +108,9 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Handle Deletion
 	if !ec2Instance.DeletionTimestamp.IsZero() {
 		log.Info("Instance is being deleted")
+		startTime := time.Now()
 		_, err := deleteEc2Instance(ctx, ec2Instance)
+		ApiLatency.Observe(time.Since(startTime).Seconds())
 		if err != nil {
 			log.Error(err, "Failed to delete EC2 instance")
 			return ctrl.Result{Requeue: true}, err
@@ -134,7 +136,9 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// If instance already exists in status, check its state in AWS (Drift Detection)
 	if ec2Instance.Status.InstanceID != "" {
+		startTime := time.Now()
 		exists, instance, err := checkEC2InstanceExists(ctx, ec2Instance.Status.InstanceID, ec2Instance)
+		ApiLatency.Observe(time.Since(startTime).Seconds())
 		if err != nil {
 			log.Error(err, "Failed to check EC2 instance in AWS")
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err

@@ -5,8 +5,8 @@ controllerManager:
     - name: ghcr-pull-secret
   container:
     image:
-      repository: ghcr.io/iam-karan-suresh/operator-repo
-      tag: v1.0.8
+      repository: docker.io/karanwebdev/ec2-kubernetes-operator
+      tag: 1.1.1
     imagePullPolicy: IfNotPresent
     args:
       - "--leader-elect"
@@ -49,8 +49,8 @@ dashboard:
   enable: true
   replicas: 1
   image:
-    repository: docker.io/karanwebdev/ec2-dashboard
-    tag: v1.0.8
+    repository: docker.io/karanwebdev/ec2-operator-dashboard
+    tag: 1.1.1
   imagePullPolicy: IfNotPresent
   port: 3000
   resources:

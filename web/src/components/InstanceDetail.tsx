@@ -21,6 +21,7 @@ import {
 import { format } from 'date-fns';
 import { cn } from '../utils';
 import { fetchInstanceEvents, fetchInstanceLogs } from '../api/client';
+import { useInstanceCost } from '../hooks/useCosts';
 
 interface InstanceDetailProps {
   instance: InstanceResponse;
@@ -36,6 +37,7 @@ export function InstanceDetail({ instance, onBack, onRefresh, refreshing }: Inst
   const [activeTab, setActiveTab] = useState<'events' | 'logs'>('logs');
   const [logs, setLogs] = useState<LogResponse[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const { cost, loading: loadingCost } = useInstanceCost(instance.instanceID);
 
   const loadEvents = useCallback(async () => {
     setLoadingEvents(true);
@@ -361,6 +363,39 @@ export function InstanceDetail({ instance, onBack, onRefresh, refreshing }: Inst
 
         {/* Sidebar Column */}
         <div className="space-y-6">
+          {/* Cost Insights Component */}
+          <div className="glass rounded-xl p-6 border-border/50">
+            <h2 className="text-lg font-semibold border-b border-border/50 pb-4 mb-5 flex items-center">
+              <Package className="w-5 h-5 mr-2 text-primary" />
+              Cost Insights
+            </h2>
+            <div className="space-y-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-muted-foreground uppercase font-semibold">Estimated Monthly</span>
+                {loadingCost ? (
+                  <div className="h-8 w-24 bg-muted animate-pulse rounded" />
+                ) : cost ? (
+                  <span className="text-2xl font-bold text-emerald-500">${cost.monthlyCost.toFixed(2)}</span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Unavailable</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-1 pt-2 border-t border-border/30">
+                <span className="text-xs text-muted-foreground uppercase font-semibold">Estimated Daily</span>
+                {loadingCost ? (
+                  <div className="h-6 w-20 bg-muted animate-pulse rounded" />
+                ) : cost ? (
+                  <span className="text-lg font-bold text-foreground/80">${cost.dailyCost.toFixed(2)}</span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Unavailable</span>
+                )}
+              </div>
+              <div className="p-3 mt-2 bg-primary/5 rounded-lg border border-primary/10 text-xs text-muted-foreground">
+                Costs are dynamically fetched using <strong>OpenCost</strong> data and mapped to this specific AWS EC2 instance.
+              </div>
+            </div>
+          </div>
+
           {/* Lifecycle Component */}
           <div className="glass rounded-xl p-6 border-border/50 sticky top-6">
             <h2 className="text-lg font-semibold border-b border-border/50 pb-4 mb-5">Lifecycle Status</h2>
