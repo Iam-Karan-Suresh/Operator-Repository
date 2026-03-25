@@ -10,13 +10,13 @@ import (
 	"sync"
 	"time"
 
+	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -82,10 +82,10 @@ var ec2OnDemandHourlyPriceUSD = map[string]float64{
 	"m5.8xlarge":  1.536,
 	"m5.12xlarge": 2.304,
 	// c5 family
-	"c5.large":    0.085,
-	"c5.xlarge":   0.17,
-	"c5.2xlarge":  0.34,
-	"c5.4xlarge":  0.68,
+	"c5.large":   0.085,
+	"c5.xlarge":  0.17,
+	"c5.2xlarge": 0.34,
+	"c5.4xlarge": 0.68,
 	// r5 family
 	"r5.large":   0.126,
 	"r5.xlarge":  0.252,
@@ -101,7 +101,6 @@ func dailyCostFromInstanceType(instanceType string) float64 {
 	// Unknown type → 0 (will show as $0.00 rather than a spinning placeholder)
 	return 0
 }
-
 
 // StartSync begins the background routine
 func (s *CostService) StartSync(ctx context.Context) {
