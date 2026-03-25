@@ -114,6 +114,11 @@ Monitor the operator's backend reconciliation activity:
 ```bash
 kubectl logs -n operator-system -l control-plane=controller-manager -c manager --tail=100
 ```
+### for debugging
+```bash 
+kubectl get pods -n operator-system | grep grafana
+
+kubectl logs -n operator-system -l app.kubernetes.io/name=grafana -c grafana --tail=50```
 
 ### Observability Tools
 - **Grafana**: `kubectl port-forward svc/operator-grafana -n operator-system 8080:80` (Go to http://localhost:8080)
