@@ -1,6 +1,6 @@
 # EC2 Instance Operator & Dashboard
 
-A production-grade Kubernetes operator to manage AWS EC2 instances with a real-time, glassmorphism-styled dashboard and a full observability stack.
+A production-grade Open Source Kubernetes operator to manage AWS EC2 instances with a real-time, glassmorphism-styled dashboard and a full observability stack.
 
 ---
 
