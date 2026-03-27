@@ -14,11 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 // InstanceCostData represents the final enriched cost metadata
@@ -39,6 +41,27 @@ type CostService struct {
 	opencostURL string
 	cache       sync.Map
 	syncPeriod  time.Duration
+}
+
+var (
+	instanceHourlyCost = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_instance_hourly_cost_usd",
+			Help: "Estimated hourly cost of an EC2 instance in USD",
+		},
+		[]string{"instance_id", "instance_type", "region", "namespace", "instance_name"},
+	)
+	instanceCumulativeCost = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_instance_cumulative_cost_usd",
+			Help: "Estimated cumulative monthly cost of an EC2 instance in USD",
+		},
+		[]string{"instance_id", "instance_type", "region", "namespace", "instance_name"},
+	)
+)
+
+func init() {
+	metrics.Registry.MustRegister(instanceHourlyCost, instanceCumulativeCost)
 }
 
 // NewCostService creates a new background worker to fetch cost and AWS metadata
@@ -323,6 +346,28 @@ func (s *CostService) syncData(ctx context.Context) {
 			MonthlyCost:  dailyCost * 30,
 			State:        state,
 		}
+
+		// Update Prometheus metrics
+		// Try to find the instance name from the CRD list
+		instanceName := ""
+		instanceNamespace := ""
+		for _, inst := range instances.Items {
+			if inst.Status.InstanceID == id {
+				instanceName = inst.Name
+				instanceNamespace = inst.Namespace
+				break
+			}
+		}
+
+		labels := prometheus.Labels{
+			"instance_id":   id,
+			"instance_type": instType,
+			"region":        instanceRegionMap[id],
+			"namespace":     instanceNamespace,
+			"instance_name": instanceName,
+		}
+		instanceHourlyCost.With(labels).Set(dailyCost / 24)
+		instanceCumulativeCost.With(labels).Set(dailyCost * 30)
 
 		s.cache.Store(id, costInfo)
 	}

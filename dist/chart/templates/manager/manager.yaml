@@ -16,6 +16,9 @@ spec:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
       labels:
         {{- include "chart.labels" . | nindent 8 }}
         control-plane: controller-manager

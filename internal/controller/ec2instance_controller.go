@@ -61,11 +61,32 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 	)
+	instanceStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_instances_by_state",
+			Help: "Number of instances by their current state",
+		},
+		[]string{"state", "namespace", "region"},
+	)
+	instanceInfo = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_instance_info",
+			Help: "Metadata about managed EC2 instances",
+		},
+		[]string{"instance_id", "instance_name", "namespace", "instance_type", "region", "state", "public_ip", "private_ip"},
+	)
+	instanceProvisionTime = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "ec2_operator_instance_provision_duration_seconds",
+			Help:    "Time taken to provision an EC2 instance",
+			Buckets: []float64{30, 60, 120, 180, 240, 300, 600},
+		},
+	)
 )
 
 func init() {
 	// Register custom metrics with the global prometheus registry
-	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal, ApiLatency)
+	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal, ApiLatency, instanceStatus, instanceInfo, instanceProvisionTime)
 }
 
 // Ec2InstanceReconciler reconciles a Ec2Instance object
@@ -150,6 +171,8 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			ec2Instance.Status.PublicIP = ""
 			ec2Instance.Status.PublicDNS = ""
 			managedInstances.Dec()
+			instanceStatus.WithLabelValues(StateTerminated, ec2Instance.Namespace, ec2Instance.Spec.Region).Inc()
+			instanceStatus.WithLabelValues(StateRunning, ec2Instance.Namespace, ec2Instance.Spec.Region).Dec()
 			if err := r.Status().Update(ctx, ec2Instance); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -207,6 +230,20 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			r.Recorder.Event(ec2Instance, corev1.EventTypeNormal, "Terminated", "EC2 Instance has been terminated")
 		}
 
+		// Update Prometheus metrics
+		instanceStatus.WithLabelValues(newState, ec2Instance.Namespace, ec2Instance.Spec.Region).Set(1)
+		// Update info metric
+		instanceInfo.WithLabelValues(
+			ec2Instance.Status.InstanceID,
+			ec2Instance.Name,
+			ec2Instance.Namespace,
+			ec2Instance.Spec.InstanceType,
+			ec2Instance.Spec.Region,
+			newState,
+			ec2Instance.Status.PublicIP,
+			ec2Instance.Status.PrivateIP,
+		).Set(1)
+
 		// Periodic resync for drift detection
 		if newState != "terminated" {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -241,7 +278,9 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// If it's already running (unlikely immediately, but for consistency)
 	if createdInfo.State == "running" {
 		managedInstances.Inc()
+		instanceProvisionTime.Observe(time.Since(startTime).Seconds())
 	}
+	instanceStatus.WithLabelValues(createdInfo.State, ec2Instance.Namespace, ec2Instance.Spec.Region).Set(1)
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
