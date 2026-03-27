@@ -146,7 +146,7 @@ func main() {
 	if len(webhookCertPath) > 0 {
 		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
 			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
-
+		
 		var err error
 		webhookCertWatcher, err = certwatcher.New(webhookCertPath+"/"+webhookCertName, webhookCertPath+"/"+webhookCertKey)
 		if err != nil {
