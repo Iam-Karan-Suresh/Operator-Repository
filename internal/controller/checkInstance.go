@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 // checkEC2InstanceExists verifies if a given EC2 instance still exists and is running in AWS.
@@ -24,12 +25,14 @@ import (
 // - The fetched `ec2types.Instance` data from AWS if it exists (for status updates).
 // - An error, if the AWS API call failed unexpectedly.
 func checkEC2InstanceExists(ctx context.Context, instanceID string, ec2Instance *computev1.Ec2Instance) (bool, *ec2types.Instance, error) {
+	log := ctrl.Log.WithName("checkEC2InstanceExists")
 	tracer := otel.GetTracerProvider().Tracer("ec2-operator")
 	ctx, span := tracer.Start(ctx, "AWS.DescribeInstances", trace.WithAttributes(
 		attribute.String("instance.id", instanceID),
 	))
 	defer span.End()
 
+	// Initialize AWS client for the specified region.
 	ec2Client, err := awsClient(ctx, ec2Instance.Spec.Region)
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to initialize AWS client: %w", err)
@@ -47,7 +50,11 @@ func checkEC2InstanceExists(ctx context.Context, instanceID string, ec2Instance 
 		}
 		return false, nil, err
 	}
-	fmt.Println("Length of Reservations are ", len(result.Reservations))
+	
+	log.Info("Fetched reservations",
+		"instanceID", instanceID,
+		"reservationCount", len(result.Reservations),
+	)
 
 	if len(result.Reservations) == 0 || len(result.Reservations[0].Instances) == 0 {
 		return false, nil, nil

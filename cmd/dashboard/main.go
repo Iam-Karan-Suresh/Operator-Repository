@@ -20,7 +20,7 @@ import (
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/dashboard"
 )
-
+//  uber-go/zap, a high-performance, structured logging library.
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
