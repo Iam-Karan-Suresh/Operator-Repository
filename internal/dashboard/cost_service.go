@@ -32,7 +32,9 @@ type InstanceCostData struct {
 	State        string  `json:"state"`
 }
 
-// CostService handles syncing data from OpenCost and AWS
+// CostService handles background synchronization of data from OpenCost and AWS.
+// It maps Kubernetes nodes to their associated AWS instances and calculates
+// estimated or actual costs to display on the dashboard.
 type CostService struct {
 	clientSet   *kubernetes.Clientset
 	k8sClient   client.Client
@@ -41,7 +43,8 @@ type CostService struct {
 	syncPeriod  time.Duration
 }
 
-// NewCostService creates a new background worker to fetch cost and AWS metadata
+// NewCostService creates a new background worker to fetch cost and AWS metadata.
+// It connects to the local OpenCost service (usually in cluster) to fetch allocation metrics.
 func NewCostService(k8sClient client.Client, clientSet *kubernetes.Clientset) *CostService {
 	url := os.Getenv("OPENCOST_URL")
 	if url == "" {
@@ -102,7 +105,8 @@ func dailyCostFromInstanceType(instanceType string) float64 {
 	return 0
 }
 
-// StartSync begins the background routine
+// StartSync begins the background routine that periodically polls AWS and OpenCost
+// to update the in-memory cache of instance costs and running states.
 func (s *CostService) StartSync(ctx context.Context) {
 	l := log.FromContext(ctx).WithName("cost-service")
 	l.Info("Starting background cost sync", "interval", s.syncPeriod)
@@ -124,7 +128,8 @@ func (s *CostService) StartSync(ctx context.Context) {
 	}
 }
 
-// extractInstanceDetails given aws:///us-east-1/i-12345 returns instanceId and region
+// extractInstanceDetails parses the ProviderID typically found on K8s Nodes
+// (e.g., aws:///us-east-1/i-12345) to extract the bare instanceId and region.
 func extractInstanceDetails(providerID string) (instanceID string, region string) {
 	if !strings.HasPrefix(providerID, "aws://") {
 		return "", ""
@@ -140,7 +145,8 @@ func extractInstanceDetails(providerID string) (instanceID string, region string
 func (s *CostService) syncData(ctx context.Context) {
 	l := log.FromContext(ctx).WithName("cost-service-sync")
 
-	// 1. List K8s Nodes
+	// Step 1. List K8s Nodes
+	// We check the standard K8s Node API because OpenCost organizes costs by Node names.
 	nodes, err := s.clientSet.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		l.Error(err, "Failed to list nodes")
@@ -160,7 +166,8 @@ func (s *CostService) syncData(ctx context.Context) {
 		}
 	}
 
-	// 1.5 List EC2Instances CRDs to find all instances we should track
+	// Step 1.5. List EC2Instances CRDs
+	// We want to track instances we provisioned even if they haven't joined the cluster as notes yet.
 	var instances computev1.Ec2InstanceList
 	if err := s.k8sClient.List(ctx, &instances); err != nil {
 		l.Error(err, "Failed to list EC2Instances")
@@ -192,7 +199,8 @@ func (s *CostService) syncData(ctx context.Context) {
 		return
 	}
 
-	// 2. Fetch costs from OpenCost
+	// Step 2. Fetch trailing costs from OpenCost.
+	// We do an HTTP GET against OpenCost's allocation API for the previous day.
 	costURL := fmt.Sprintf("%s/allocation?aggregate=node&window=1d", s.opencostURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, costURL, nil)
 	costByNode := make(map[string]float64)

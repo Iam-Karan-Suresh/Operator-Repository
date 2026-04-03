@@ -1,3 +1,4 @@
+// Package controller implements the Kubernetes custom controllers for this operator.
 package controller
 
 import (
@@ -16,6 +17,13 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+// createEc2Instance is responsible for translating the Kubernetes Ec2Instance desired state into actual AWS resources.
+// It maps our Custom Resource (CR) fields (like InstanceType, AMI ID, Tags, Storage) to the AWS RunInstances API payload.
+// It also sets up tracing and blocks until the newly created instance reaches the "running" state in AWS.
+//
+// Returns:
+// - CreatedInstanceInfo: A struct containing instance metadata (ID, IPs) useful for updating the K8s object status.
+// - err: Any error encountered during the AWS provisioning process.
 func createEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) (createdInstanceInfo *computev1.CreatedInstanceInfo, err error) {
 	log := logf.FromContext(ctx).WithName("createEc2Instance")
 
@@ -61,14 +69,16 @@ func createEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) 
 		}
 	}
 
-	// Storage configuration
+	// Storage configuration parsing (Elastic Block Store - EBS).
+	// We calculate how many block device mappings we need based on root volume AND additional volumes from the CR.
 	cap := 1
 	if len(ec2Instance.Spec.Storage.AdditionalVolumes) > 0 {
 		cap += len(ec2Instance.Spec.Storage.AdditionalVolumes)
 	}
 	blockDeviceMappings := make([]ec2types.BlockDeviceMapping, 0, cap)
 
-	// Root volume
+	// Configure Root volume mapping if specified.
+	// Typically attached to /dev/sda1, but this can vary depending on the AMI Linux distro.
 	if ec2Instance.Spec.Storage.RootVolume.Size > 0 {
 		mapping := ec2types.BlockDeviceMapping{
 			DeviceName: aws.String("/dev/sda1"), // Default root device for many AMIs
@@ -81,7 +91,7 @@ func createEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) 
 		blockDeviceMappings = append(blockDeviceMappings, mapping)
 	}
 
-	// Additional volumes
+	// Configure Additional attached volumes if any are specified in the CR spec
 	for _, vol := range ec2Instance.Spec.Storage.AdditionalVolumes {
 		mapping := ec2types.BlockDeviceMapping{
 			DeviceName: aws.String(vol.DeviceName),
@@ -94,6 +104,7 @@ func createEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) 
 		blockDeviceMappings = append(blockDeviceMappings, mapping)
 	}
 
+	// Construct the primary AWS API payload for launching the instance
 	runInput := &ec2.RunInstancesInput{
 		ImageId:           aws.String(ec2Instance.Spec.AMIId),
 		InstanceType:      ec2types.InstanceType(ec2Instance.Spec.InstanceType),
@@ -146,6 +157,8 @@ func createEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) 
 	log.Info(" === EC2 INSTANCE CREATED SUCCESSFULLY === ", "instanceID", *inst.InstanceId)
 	log.Info(" === WAITING FOR INSTANCE TO BE IN RUNNING STATE === ")
 
+	// Use AWS SDK wait routines to poll the instance state until it reports as "running".
+	// This ensures our operator status doesn't flap and reports actual usable infrastructure.
 	runWaiter := ec2.NewInstanceRunningWaiter(ec2Client)
 	maxWaitTime := 3 * time.Minute
 

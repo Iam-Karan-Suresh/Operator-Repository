@@ -1,3 +1,6 @@
+// Package main provides a standalone entry point for the EC2 Operator Dashboard.
+// This allows running the dashboard as a separate container/process from the main controller
+// if needed, which is useful for specialized deployment scenarios (like read-only views).
 package main
 
 import (
@@ -40,7 +43,7 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// Setup K8s Client
+	// Setup K8s Client using the default In-Cluster or Kubeconfig context.
 	config := ctrl.GetConfigOrDie()
 	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
@@ -48,8 +51,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Setup Server
-	clientset, err := kubernetes.NewForConfig(config) // Changed mgr.GetConfig() to config
+	// Setup Server and CostService dependencies.
+	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		setupLog.Error(err, "unable to create kubernetes clientset")
 		os.Exit(1)
@@ -57,7 +60,7 @@ func main() {
 
 	dashServer := dashboard.NewServer(k8sClient, clientset, port) // Changed mgr.GetClient() to k8sClient and port variable
 
-	// Extract the embedded filesystem so it can be served
+	// Extract the embedded filesystem (the React build) so it can be served via HTTP.
 	subFS, err := operatorrepo.GetStaticFS()
 	if err != nil {
 		setupLog.Error(err, "failed to get sub filesystem for static files")

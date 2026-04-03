@@ -1,3 +1,4 @@
+// Package controller implements the Kubernetes custom controllers for this operator.
 package controller
 
 import (
@@ -13,6 +14,10 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+// deleteEc2Instance handles the termination of an EC2 instance in AWS.
+// This function is triggered by the reconciler when the Kubernetes resource is marked for deletion (i.e., has a DeletionTimestamp).
+// It talks to the AWS API to terminate the instance and uses a waiter to block until the instance is formally shutting down or terminated.
+// Returns a boolean indicating success and an error if something fails.
 func deleteEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) (bool, error) {
 	log := logf.FromContext(ctx).WithName("deleteEc2Instance")
 

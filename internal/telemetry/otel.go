@@ -1,3 +1,5 @@
+// Package telemetry sets up OpenTelemetry (OTEL) configurations to enable
+// distributed tracing across the operator. This helps track API latencies and internal flows.
 package telemetry
 
 import (
@@ -12,7 +14,10 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 )
 
-// InitTracer initializes an OTLP exporter, and configures the corresponding trace provider.
+// InitTracer initializes an OpenTelemetry (OTLP) exporter, configures the corresponding trace provider,
+// and sets it as the global tracer provider.
+// This allows the reconciler and nested AWS API calls to emit trace spans the user can visualize 
+// in platforms like Jaeger or Grafana Tempo.
 func InitTracer(ctx context.Context, serviceName string, collectorEndpoint string) (*sdktrace.TracerProvider, error) {
 	exporter, err := otlptrace.New(
 		ctx,

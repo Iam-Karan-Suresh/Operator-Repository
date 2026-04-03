@@ -30,6 +30,10 @@ import (
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 )
 
+// The Ec2Instance Controller test uses Ginkgo (BDD) and Gomega (Matchers).
+// These tests run against 'envtest', which starts a real Kubernetes API Server and Etcd 
+// locally, but DOES NOT start a real AWS client. AWS calls should usually be mocked 
+// or verified in higher-level E2E tests.
 var _ = Describe("Ec2Instance Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
@@ -43,6 +47,8 @@ var _ = Describe("Ec2Instance Controller", func() {
 		ec2instance := &computev1.Ec2Instance{}
 
 		BeforeEach(func() {
+			// This block runs before every 'It' test case.
+			// It ensures the custom resource exists in the mock API server.
 			By("creating the custom resource for the Kind Ec2Instance")
 			err := k8sClient.Get(ctx, typeNamespacedName, ec2instance)
 			if err != nil && errors.IsNotFound(err) {
@@ -51,7 +57,12 @@ var _ = Describe("Ec2Instance Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					// Initial Spec configuration for testing
+					Spec: computev1.Ec2InstanceSpec{
+						InstanceType: "t3.micro",
+						AMIId:        "ami-12345",
+						Region:       "us-east-1",
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -68,6 +79,8 @@ var _ = Describe("Ec2Instance Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
+			// We manually invoke the Reconcile method for unit-testing the logic.
+			// In a real cluster, the Manager handles this trigger automatically via watches.
 			controllerReconciler := &Ec2InstanceReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
@@ -77,8 +90,8 @@ var _ = Describe("Ec2Instance Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+			// After reconciliation, we should ideally verify if status was updated
+			// or if expectations on external mocks were met.
 		})
 	})
 })

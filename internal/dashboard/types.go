@@ -1,8 +1,11 @@
+// Package dashboard provides the web interface backend.
 package dashboard
 
 import "time"
 
-// InstanceResponse represents the flattened EC2 instance data sent to the frontend
+// InstanceResponse represents the flattened EC2 instance data sent to the frontend.
+// Since the raw Kubernetes custom resource specification (CR) can be highly nested,
+// we map it into a UI-friendly flattened structure.
 type InstanceResponse struct {
 	Name             string            `json:"name"`
 	Namespace        string            `json:"namespace"`

@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package main is the entry point for the EC2 Operator.
+// It initializes the Kubernetes manager, registers the controllers,
+// and starts the web dashboard and other background services.
 package main
 
 import (
@@ -55,8 +58,11 @@ var (
 )
 
 func init() {
+	// Register the standard Kubernetes types (Pods, ConfigMaps, etc.) with the runtime scheme.
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
+	// Register our custom EC2Instance API types with the runtime scheme.
+	// This allows the client to understand how to serialize/deserialize our CRDs.
 	utilruntime.Must(computev1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
@@ -102,12 +108,14 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// Initialize OpenTelemetry
+	// Initialize OpenTelemetry (OTEL) for distributed tracing.
+	// If an OTLP endpoint is provided, we send trace data (spans) to that collector.
 	if otlpEndpoint != "" {
 		tp, err := telemetry.InitTracer(context.Background(), "ec2-operator", otlpEndpoint)
 		if err != nil {
 			setupLog.Error(err, "unable to initialize tracer")
 		} else {
+			// Ensure tracer provider is shut down gracefully when the process exits.
 			defer func() {
 				if err := tp.Shutdown(context.Background()); err != nil {
 					setupLog.Error(err, "error shutting down tracer provider")
@@ -199,6 +207,8 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	// Create the Manager which will coordinate our controllers and webhooks.
+	// We use ctrl.GetConfigOrDie() to automatically load cluster configuration (Kubeconfig or In-Cluster).
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
@@ -233,10 +243,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Register our EC2Instance Reconciler with the Manager.
+	// The Manager will then start the controller and manage its lifecycle.
 	if err := (&controller.Ec2InstanceReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("ec2instance-controller"), //nolint:staticcheck // GetEventRecorder returns incompatible interface type
+		Recorder: mgr.GetEventRecorderFor("ec2instance-controller"), // Record K8s Events
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Ec2Instance")
 		os.Exit(1)
@@ -259,20 +271,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	// If enabled, start the integrated web dashboard.
 	if enableDashboard {
 		setupLog.Info("starting dashboard server", "port", dashboardPort)
+		
+		// Retrieve the statically embedded React frontend files.
 		staticFS, err := operatorrepo.GetStaticFS()
 		if err != nil {
 			setupLog.Error(err, "unable to get static fs for dashboard")
 			os.Exit(1)
 		}
 
+		// Create a standard Kubernetes clientset for low-level node and pod metadata access.
 		clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 		if err != nil {
 			setupLog.Error(err, "unable to create kubernetes clientset")
 			os.Exit(1)
 		}
 
+		// Initialize and add the Dashboard server as a "Runnable" to the Manager.
 		dashServer := dashboard.NewServer(mgr.GetClient(), clientset, dashboardPort)
 		dashServer.SetStaticFS(staticFS)
 
@@ -281,7 +298,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Start the background cost sync goroutine via the manager's lifecycle
+		// Start the background cost sync routine. This runs alongside the reconciler.
 		if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 			dashServer.GetCostService().StartSync(ctx)
 			return nil

@@ -23,7 +23,9 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// EC2InstanceSpec defines the desired state of Ec2Instance
+// EC2InstanceSpec defines the desired state of an Ec2Instance.
+// Think of this as the user's "order form". They fill out this Spec in YAML,
+// and our operator makes sure the real world perfectly matches it.
 type Ec2InstanceSpec struct {
 
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -55,7 +57,9 @@ type VolumeConfig struct {
 	Encrypted  bool   `json:"encrypted,omitempty"`
 }
 
-// Ec2InstanceStatus defines the observed state of Ec2Instance.
+// Ec2InstanceStatus defines the observed (actual) state of Ec2Instance.
+// Our operator continuously updates this struct with data fetched directly from AWS.
+// This tells the user the current reality (e.g., whether the instance is actually 'running' and what its IP is).
 type Ec2InstanceStatus struct {
 	InstanceID string `json:"instanceID,omitempty"`
 	State      string `json:"state,omitempty"`
