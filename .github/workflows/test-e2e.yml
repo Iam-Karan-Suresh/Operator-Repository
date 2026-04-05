@@ -26,6 +26,17 @@ jobs:
       - name: Verify kind installation
         run: kind version
 
+      - name: Create kind cluster
+        run: kind create cluster
+
+      - name: Create AWS Secret
+        run: |
+          kubectl create namespace operator-system || true
+          kubectl create secret generic aws-credentials \
+            -n operator-system \
+            --from-literal=AWS_ACCESS_KEY_ID=dummy \
+            --from-literal=AWS_SECRET_ACCESS_KEY=dummy
+
       - name: Running Test e2e
         run: |
           go mod tidy

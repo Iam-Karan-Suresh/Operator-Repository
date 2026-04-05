@@ -26,6 +26,7 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.25'
+        cache: true
 
     - name: Install dependencies
       run: go mod download
@@ -35,7 +36,7 @@ jobs:
 
     # To run golangci-lint
     - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v6
+      uses: golangci/golangci-lint-action@v7
       with:
         version: v2.7.2
         args: --timeout=5m
@@ -53,7 +54,7 @@ jobs:
 
     - name: Install Dependencies
       working-directory: ./web
-      run: npm install
+      run: npm ci
 
     - name: Lint TS/TSX
       working-directory: ./web
