@@ -1,6 +1,6 @@
 # EC2 Instance Operator & Dashboard
 
-A production-grade Kubernetes operator to manage AWS EC2 instances with a real-time, glassmorphism-styled dashboard and a full observability stack.
+A production-grade Open Source Kubernetes operator to manage AWS EC2 instances with a real-time, glassmorphism-styled dashboard and a full observability stack.
 
 ---
 
@@ -141,6 +141,19 @@ spec:
   instanceType: "t3.micro"
   volume: 25 # (Optional) Root volume size in GB
 ```
+
+---
+
+### 🚀 Local Development (Minikube)
+For a full local environment with 6 CPUs and 6GB RAM, use the automated deployment script:
+```bash
+./scripts/deploy-minikube.sh
+```
+This script will:
+- Provision a Minikube cluster with optimized resources.
+- Build local Docker images for the Operator & Dashboard.
+- Deploy the local Helm chart with `imagePullPolicy: Never`.
+- Provide URLs for all observability tools (Grafana, Jaeger, etc.).
 
 ---
 

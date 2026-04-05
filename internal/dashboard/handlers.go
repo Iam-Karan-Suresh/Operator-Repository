@@ -39,7 +39,9 @@ type UISettings struct {
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods/log,verbs=get;list;watch
 
-// Server handles dashboard API requests
+// Server handles the HTTP dashboard API requests.
+// It interfaces with the Kubernetes controllers to query CRDs, Pod Logs, and metrics,
+// serving these up over a RESTful API for the React frontend to consume.
 type Server struct {
 	client    client.Client
 	clientset *kubernetes.Clientset
@@ -49,6 +51,8 @@ type Server struct {
 	costSvc   *CostService
 }
 
+// NewServer constructs the dashboard server handler payload.
+// It wires together the K8s controller-runtime client (cached) and the standard clientset.
 func NewServer(mgrClient client.Client, clientset *kubernetes.Clientset, port string) *Server {
 	// Try to get namespace from environment, fallback to default
 	ns := os.Getenv("POD_NAMESPACE")
@@ -245,6 +249,9 @@ func (s *Server) handleGetInstanceOrWatch(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// handleWatchInstances establishes an SSE (Server-Sent Events) connection with the client.
+// This allows the server to stream real-time updates when an EC2 instance changes state
+// (e.g., Transitioning from Pending to Running) without requiring the frontend to poll.
 func (s *Server) handleWatchInstances(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	l := log.FromContext(ctx).WithName("sse")

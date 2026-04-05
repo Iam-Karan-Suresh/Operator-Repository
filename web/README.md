@@ -29,7 +29,7 @@ The dashboard uses **Server-Sent Events (SSE)** to provide real-time updates to 
 The dashboard server interacts with the Kubernetes API server using the `controller-runtime` client:
 -   `GET /api/instances`: Lists all `Ec2Instance` custom resources.
 -   `GET /api/instances/{name}`: Fetches a single instance's detailed specification and status.
--   `GET /api/instances/{name}/events`: (Coming Soon) Fetches Kubernetes events related to the specific instance.
+-   `GET /api/instances/{name}/events`: Fetches Kubernetes events related to the specific instance.
 -   `GET /api/stats`: Aggregates metrics from the operator's internal Prometheus counters.
 -   `GET/POST /api/settings`: Manages user personalization settings stored in a cluster-wide ConfigMap.
 

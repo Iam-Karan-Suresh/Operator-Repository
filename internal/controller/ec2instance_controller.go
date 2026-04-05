@@ -111,7 +111,9 @@ func init() {
 	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal, ApiLatency, instanceStatus, instanceInfo, instanceProvisionTime, instanceState, instanceIPs)
 }
 
-// Ec2InstanceReconciler reconciles a Ec2Instance object
+// Ec2InstanceReconciler reconciles an Ec2Instance object.
+// The Reconciler is the core component of the operator pattern. It acts as an endless control loop
+// ensuring the actual state of the system matches the desired state described in the Ec2Instance YAML.
 type Ec2InstanceReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
@@ -125,6 +127,12 @@ type Ec2InstanceReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
+//
+// This function gets called every time a relevant event occurs:
+// - A user applies a new Ec2Instance YAML.
+// - A user updates an existing Ec2Instance YAML.
+// - A user deletes an Ec2Instance.
+// - The periodic resync interval hits.
 func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -148,7 +156,10 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Handle Deletion
+	// -------------------------------------------------------------
+	// 1. Handle Deletion (if resource is being deleted by the user)
+	// -------------------------------------------------------------
+	// If the DeletionTimestamp is set, the resource is pending deletion. We must run finalizers.
 	if !ec2Instance.DeletionTimestamp.IsZero() {
 		log.Info("Instance is being deleted")
 		startTime := time.Now()
@@ -167,7 +178,11 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	// Add Finalizer if missing
+	// -------------------------------------------------------------
+	// 2. Add Finalizer (if missing)
+	// -------------------------------------------------------------
+	// A Finalizer ensures Kubernetes waits for our logic to finish (like deleting the AWS instance)
+	// before it completely removes the object from its database.
 	if !controllerutil.ContainsFinalizer(ec2Instance, "ec2instance.compute.cloud.com") {
 		controllerutil.AddFinalizer(ec2Instance, "ec2instance.compute.cloud.com")
 		if err := r.Update(ctx, ec2Instance); err != nil {
@@ -177,7 +192,11 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	// If instance already exists in status, check its state in AWS (Drift Detection)
+	// -------------------------------------------------------------
+	// 3. Drift Detection (Checking existing EC2 instances in AWS)
+	// -------------------------------------------------------------
+	// If instance already exists in status, check its state in AWS.
+	// This helps us know if AWS instance was terminated directly from the AWS Console.
 	if ec2Instance.Status.InstanceID != "" {
 		startTime := time.Now()
 		exists, instance, err := checkEC2InstanceExists(ctx, ec2Instance.Status.InstanceID, ec2Instance)
@@ -300,7 +319,10 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	// Create new instance
+	// -------------------------------------------------------------
+	// 4. Create new instance in AWS
+	// -------------------------------------------------------------
+	// If we reach here, we know the instance does not exist in AWS yet.
 	log.Info("Creating new EC2 Instance in AWS", "name", ec2Instance.Name)
 	startTime := time.Now()
 	createdInfo, err := createEc2Instance(ctx, ec2Instance)
