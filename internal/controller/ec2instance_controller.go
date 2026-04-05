@@ -171,6 +171,9 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return ctrl.Result{Requeue: true}, err
 		}
 
+		// Cleanup Prometheus series for instanceInfo, instanceState, and instanceIPs prior to removing the finalizer
+		r.cleanupInstanceMetrics(ec2Instance)
+
 		controllerutil.RemoveFinalizer(ec2Instance, "ec2instance.compute.cloud.com")
 		if err := r.Update(ctx, ec2Instance); err != nil {
 			log.Error(err, "Failed to remove finalizer")
@@ -398,4 +401,34 @@ func (r *Ec2InstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&computev1.Ec2Instance{}).
 		Named("ec2instance").
 		Complete(r)
+}
+
+// cleanupInstanceMetrics removes all series related to a specific instance to prevent stale metrics.
+// Since DeletePartialMatch is only available in K8s component-base metrics, we use standard DeleteLabelValues
+// with all available labels from the CR and status for standard Prometheus metrics compatibility.
+func (r *Ec2InstanceReconciler) cleanupInstanceMetrics(ec2Instance *computev1.Ec2Instance) {
+	if ec2Instance.Status.InstanceID == "" {
+		return
+	}
+	instanceID := ec2Instance.Status.InstanceID
+
+	// instanceInfo uses multiple labels (id, name, namespace, type, region)
+	instanceInfo.DeleteLabelValues(
+		instanceID,
+		ec2Instance.Name,
+		ec2Instance.Namespace,
+		ec2Instance.Spec.InstanceType,
+		ec2Instance.Spec.Region,
+	)
+
+	// instanceState only uses instance_id
+	instanceState.DeleteLabelValues(instanceID)
+
+	// instanceIPs uses variable IP labels, we clean up what was registered in status
+	if ec2Instance.Status.PublicIP != "" {
+		instanceIPs.DeleteLabelValues(instanceID, "public", ec2Instance.Status.PublicIP)
+	}
+	if ec2Instance.Status.PrivateIP != "" {
+		instanceIPs.DeleteLabelValues(instanceID, "private", ec2Instance.Status.PrivateIP)
+	}
 }
