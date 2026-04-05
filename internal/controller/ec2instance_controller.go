@@ -21,6 +21,8 @@ import (
 	"time"
 
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
+	"github.com/Iam-Karan-Suresh/operator-repo/internal/cache"
+	"github.com/Iam-Karan-Suresh/operator-repo/internal/events"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -64,17 +66,15 @@ var (
 )
 
 func init() {
-	// Register custom metrics with the global prometheus registry
 	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal, ApiLatency)
 }
 
-// Ec2InstanceReconciler reconciles an Ec2Instance object.
-// The Reconciler is the core component of the operator pattern. It acts as an endless control loop
-// ensuring the actual state of the system matches the desired state described in the Ec2Instance YAML.
 type Ec2InstanceReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
+	Cache    *cache.InstanceCache // Redis cache
+	Events   *events.Producer     // Kafka event producer
 }
 
 // +kubebuilder:rbac:groups=compute.cloud.com,resources=ec2instances,verbs=get;list;watch;create;update;patch;delete
@@ -82,14 +82,6 @@ type Ec2InstanceReconciler struct {
 // +kubebuilder:rbac:groups=compute.cloud.com,resources=ec2instances/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;patch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-//
-// This function gets called every time a relevant event occurs:
-// - A user applies a new Ec2Instance YAML.
-// - A user updates an existing Ec2Instance YAML.
-// - A user deletes an Ec2Instance.
-// - The periodic resync interval hits.
 func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -113,10 +105,6 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// -------------------------------------------------------------
-	// 1. Handle Deletion (if resource is being deleted by the user)
-	// -------------------------------------------------------------
-	// If the DeletionTimestamp is set, the resource is pending deletion. We must run finalizers.
 	if !ec2Instance.DeletionTimestamp.IsZero() {
 		log.Info("Instance is being deleted")
 		startTime := time.Now()
@@ -127,6 +115,20 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return ctrl.Result{Requeue: true}, err
 		}
 
+		if r.Cache != nil {
+			_ = r.Cache.DeleteInstance(ctx, ec2Instance.Status.InstanceID)
+		}
+		if r.Events != nil {
+			_ = r.Events.Publish(ctx, events.InstanceEvent{
+				Type:       events.InstanceDeleted,
+				InstanceID: ec2Instance.Status.InstanceID,
+				Name:       ec2Instance.Name,
+				Namespace:  ec2Instance.Namespace,
+				State:      StateTerminated,
+				Region:     ec2Instance.Spec.Region,
+			})
+		}
+
 		controllerutil.RemoveFinalizer(ec2Instance, "ec2instance.compute.cloud.com")
 		if err := r.Update(ctx, ec2Instance); err != nil {
 			log.Error(err, "Failed to remove finalizer")
@@ -135,11 +137,6 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	// -------------------------------------------------------------
-	// 2. Add Finalizer (if missing)
-	// -------------------------------------------------------------
-	// A Finalizer ensures Kubernetes waits for our logic to finish (like deleting the AWS instance)
-	// before it completely removes the object from its database.
 	if !controllerutil.ContainsFinalizer(ec2Instance, "ec2instance.compute.cloud.com") {
 		controllerutil.AddFinalizer(ec2Instance, "ec2instance.compute.cloud.com")
 		if err := r.Update(ctx, ec2Instance); err != nil {
@@ -149,12 +146,18 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	// -------------------------------------------------------------
-	// 3. Drift Detection (Checking existing EC2 instances in AWS)
-	// -------------------------------------------------------------
-	// If instance already exists in status, check its state in AWS.
-	// This helps us know if AWS instance was terminated directly from the AWS Console.
 	if ec2Instance.Status.InstanceID != "" {
+		if r.Cache != nil {
+			cached := r.Cache.GetInstanceState(ctx, ec2Instance.Status.InstanceID)
+			if cached != nil && cached.State == ec2Instance.Status.State {
+				log.V(1).Info("Cache hit, skipping AWS API call", "instanceID", ec2Instance.Status.InstanceID)
+				if cached.State != StateTerminated {
+					return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+				}
+				return ctrl.Result{}, nil
+			}
+		}
+
 		startTime := time.Now()
 		exists, instance, err := checkEC2InstanceExists(ctx, ec2Instance.Status.InstanceID, ec2Instance)
 		ApiLatency.Observe(time.Since(startTime).Seconds())
@@ -169,13 +172,24 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			ec2Instance.Status.PublicIP = ""
 			ec2Instance.Status.PublicDNS = ""
 			managedInstances.Dec()
+
+			if r.Cache != nil {
+				_ = r.Cache.SetInstanceState(ctx, &cache.CachedInstanceState{
+					InstanceID: ec2Instance.Status.InstanceID,
+					State:      StateTerminated,
+					Region:     ec2Instance.Spec.Region,
+				})
+			}
+			if r.Events != nil {
+				_ = r.Events.Publish(ctx, events.InstanceEvent{Type: events.DriftDetected, InstanceID: ec2Instance.Status.InstanceID, Name: ec2Instance.Name, Namespace: ec2Instance.Namespace, State: StateTerminated})
+			}
+
 			if err := r.Status().Update(ctx, ec2Instance); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, nil
 		}
 
-		// Update status from AWS state
 		newState := string(instance.State.Name)
 		newIP := ""
 		if instance.PublicIpAddress != nil {
@@ -194,10 +208,24 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			newPrivDNS = *instance.PrivateDnsName
 		}
 
+		if r.Cache != nil {
+			_ = r.Cache.SetInstanceState(ctx, &cache.CachedInstanceState{
+				InstanceID: ec2Instance.Status.InstanceID,
+				State:      newState,
+				PublicIP:   newIP,
+				PrivateIP:  newPrivIP,
+				PublicDNS:  newDNS,
+				PrivateDNS: newPrivDNS,
+				Region:     ec2Instance.Spec.Region,
+			})
+		}
+
 		if ec2Instance.Status.State != newState || ec2Instance.Status.PublicIP != newIP {
 			log.Info("Drift detected, updating status", "oldState", ec2Instance.Status.State, "newState", newState)
+			if r.Events != nil {
+				_ = r.Events.Publish(ctx, events.InstanceEvent{Type: events.DriftDetected, InstanceID: ec2Instance.Status.InstanceID, Name: ec2Instance.Name, Namespace: ec2Instance.Namespace, State: newState, PublicIP: newIP, PrivateIP: newPrivIP, Region: ec2Instance.Spec.Region})
+			}
 
-			// Update metrics if state changed to/from running
 			if ec2Instance.Status.State != StateRunning && newState == StateRunning {
 				managedInstances.Inc()
 			} else if ec2Instance.Status.State == StateRunning && newState != StateRunning {
@@ -216,27 +244,19 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			}
 		}
 
-		// Update metrics
 		switch newState {
 		case StateRunning:
-			log.Info("Instance reached running state", "name", ec2Instance.Name)
 			r.Recorder.Event(ec2Instance, corev1.EventTypeNormal, "Running", "EC2 Instance is now running")
 		case StateTerminated:
-			log.Info("Instance reached terminated state", "name", ec2Instance.Name)
 			r.Recorder.Event(ec2Instance, corev1.EventTypeNormal, "Terminated", "EC2 Instance has been terminated")
 		}
 
-		// Periodic resync for drift detection
 		if newState != "terminated" {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 		return ctrl.Result{}, nil
 	}
 
-	// -------------------------------------------------------------
-	// 4. Create new instance in AWS
-	// -------------------------------------------------------------
-	// If we reach here, we know the instance does not exist in AWS yet.
 	log.Info("Creating new EC2 Instance in AWS", "name", ec2Instance.Name)
 	startTime := time.Now()
 	createdInfo, err := createEc2Instance(ctx, ec2Instance)
@@ -259,15 +279,28 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	if r.Cache != nil {
+		_ = r.Cache.SetInstanceState(ctx, &cache.CachedInstanceState{
+			InstanceID: createdInfo.InstanceID,
+			State:      createdInfo.State,
+			PublicIP:   createdInfo.PublicIP,
+			PrivateIP:  createdInfo.PrivateIP,
+			PublicDNS:  createdInfo.PublicDNS,
+			PrivateDNS: createdInfo.PrivateDNS,
+			Region:     ec2Instance.Spec.Region,
+		})
+	}
+	if r.Events != nil {
+		_ = r.Events.Publish(ctx, events.InstanceEvent{Type: events.InstanceCreated, InstanceID: createdInfo.InstanceID, Name: ec2Instance.Name, Namespace: ec2Instance.Namespace, State: createdInfo.State, PublicIP: createdInfo.PublicIP, PrivateIP: createdInfo.PrivateIP, Region: ec2Instance.Spec.Region})
+	}
+
 	log.Info("Successfully created instance and updated status", "instanceID", createdInfo.InstanceID)
-	// If it's already running (unlikely immediately, but for consistency)
 	if createdInfo.State == "running" {
 		managedInstances.Inc()
 	}
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
 func (r *Ec2InstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&computev1.Ec2Instance{}).

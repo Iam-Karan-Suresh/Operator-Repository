@@ -144,6 +144,7 @@ For more internal details, refer to:
 - [Operator Architecture & Flow](docs/OPERATOR.md)
 - [UI Features & Design](docs/UI.md)
 - [System Architecture](docs/ARCHITECTURE.md)
+- [Performance Optimization](docs/PERFORMANCE_OPTIMIZATION.md)
 - [Changelog & Evolution](docs/CHANGELOG.md)
 
 ---
