@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -255,6 +256,12 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			// Update metrics if state changed to/from running
 			if ec2Instance.Status.State != StateRunning && newState == StateRunning {
 				managedInstances.Inc()
+
+				// If we have a provisioning start time, observe the duration
+				if ec2Instance.Status.ProvisioningStartTime != nil {
+					instanceProvisionTime.Observe(time.Since(ec2Instance.Status.ProvisioningStartTime.Time).Seconds())
+					ec2Instance.Status.ProvisioningStartTime = nil
+				}
 			} else if ec2Instance.Status.State == StateRunning && newState != StateRunning {
 				managedInstances.Dec()
 			}
@@ -325,6 +332,9 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// If we reach here, we know the instance does not exist in AWS yet.
 	log.Info("Creating new EC2 Instance in AWS", "name", ec2Instance.Name)
 	startTime := time.Now()
+	// Persist the provisioning start time
+	ec2Instance.Status.ProvisioningStartTime = &metav1.Time{Time: startTime}
+
 	createdInfo, err := createEc2Instance(ctx, ec2Instance)
 	ApiLatency.Observe(time.Since(startTime).Seconds())
 	if err != nil {
@@ -346,10 +356,19 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	log.Info("Successfully created instance and updated status", "instanceID", createdInfo.InstanceID)
-	// If it's already running (unlikely immediately, but for consistency)
-	if createdInfo.State == "running" {
+	// If it's already running (observed immediately after RunInstances)
+	if createdInfo.State == StateRunning {
 		managedInstances.Inc()
-		instanceProvisionTime.Observe(time.Since(startTime).Seconds())
+		if ec2Instance.Status.ProvisioningStartTime != nil {
+			instanceProvisionTime.Observe(time.Since(ec2Instance.Status.ProvisioningStartTime.Time).Seconds())
+			ec2Instance.Status.ProvisioningStartTime = nil
+
+			// Update status again to clear the provisioning start time if it was set
+			if err := r.Status().Update(ctx, ec2Instance); err != nil {
+				log.Error(err, "Failed to clear provisioning start time")
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
 	// Update Prometheus metrics

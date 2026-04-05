@@ -61,13 +61,14 @@ type VolumeConfig struct {
 // Our operator continuously updates this struct with data fetched directly from AWS.
 // This tells the user the current reality (e.g., whether the instance is actually 'running' and what its IP is).
 type Ec2InstanceStatus struct {
-	InstanceID string `json:"instanceID,omitempty"`
-	State      string `json:"state,omitempty"`
-	PublicIP   string `json:"publicIP,omitempty"`
-	PrivateIP  string `json:"privateIP,omitempty"`
-	PublicDNS  string `json:"publicDNS,omitempty"`
-	PrivateDNS string `json:"privateDNS,omitempty"`
-	LaunchTime string `json:"launchTime,omitempty"`
+	InstanceID            string       `json:"instanceID,omitempty"`
+	State                 string       `json:"state,omitempty"`
+	PublicIP              string       `json:"publicIP,omitempty"`
+	PrivateIP             string       `json:"privateIP,omitempty"`
+	PublicDNS             string       `json:"publicDNS,omitempty"`
+	PrivateDNS            string       `json:"privateDNS,omitempty"`
+	LaunchTime            string       `json:"launchTime,omitempty"`
+	ProvisioningStartTime *metav1.Time `json:"provisioningStartTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true
