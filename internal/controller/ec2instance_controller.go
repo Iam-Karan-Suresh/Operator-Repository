@@ -63,17 +63,31 @@ var (
 	)
 	instanceStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "ec2_operator_instances_by_state",
-			Help: "Number of instances by their current state",
+			Name: "ec2_operator_managed_instances_total_by_location",
+			Help: "Total number of managed EC2 instances by namespace and region",
 		},
-		[]string{"state", "namespace", "region"},
+		[]string{"namespace", "region"},
 	)
 	instanceInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "ec2_operator_instance_info",
 			Help: "Metadata about managed EC2 instances",
 		},
-		[]string{"instance_id", "instance_name", "namespace", "instance_type", "region", "state", "public_ip", "private_ip"},
+		[]string{"instance_id", "instance_name", "namespace", "instance_type", "region"},
+	)
+	instanceState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_instance_state",
+			Help: "Current state of the EC2 instance (0:pending, 1:running, 2:shutting-down, 3:terminated, 4:stopping, 5:stopped)",
+		},
+		[]string{"instance_id"},
+	)
+	instanceIPs = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_instance_ips",
+			Help: "IP addresses of the EC2 instance",
+		},
+		[]string{"instance_id", "type", "ip_address"},
 	)
 	instanceProvisionTime = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
@@ -82,11 +96,19 @@ var (
 			Buckets: []float64{30, 60, 120, 180, 240, 300, 600},
 		},
 	)
+	stateCodes = map[string]float64{
+		"pending":       0,
+		"running":       1,
+		"shutting-down": 2,
+		"terminated":    3,
+		"stopping":      4,
+		"stopped":       5,
+	}
 )
 
 func init() {
 	// Register custom metrics with the global prometheus registry
-	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal, ApiLatency, instanceStatus, instanceInfo, instanceProvisionTime)
+	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal, ApiLatency, instanceStatus, instanceInfo, instanceProvisionTime, instanceState, instanceIPs)
 }
 
 // Ec2InstanceReconciler reconciles a Ec2Instance object
@@ -167,12 +189,22 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 		if !exists {
 			log.Info("Instance missing in AWS, marking as terminated", "instanceID", ec2Instance.Status.InstanceID)
+
+			// Cleanup old state and IPs
+			instanceState.WithLabelValues(ec2Instance.Status.InstanceID).Set(stateCodes[StateTerminated])
+			if ec2Instance.Status.PublicIP != "" {
+				instanceIPs.DeleteLabelValues(ec2Instance.Status.InstanceID, "public", ec2Instance.Status.PublicIP)
+			}
+			if ec2Instance.Status.PrivateIP != "" {
+				instanceIPs.DeleteLabelValues(ec2Instance.Status.InstanceID, "private", ec2Instance.Status.PrivateIP)
+			}
+
 			ec2Instance.Status.State = StateTerminated
 			ec2Instance.Status.PublicIP = ""
 			ec2Instance.Status.PublicDNS = ""
 			managedInstances.Dec()
-			instanceStatus.WithLabelValues(StateTerminated, ec2Instance.Namespace, ec2Instance.Spec.Region).Inc()
-			instanceStatus.WithLabelValues(StateRunning, ec2Instance.Namespace, ec2Instance.Spec.Region).Dec()
+			instanceStatus.WithLabelValues(ec2Instance.Namespace, ec2Instance.Spec.Region).Dec()
+
 			if err := r.Status().Update(ctx, ec2Instance); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -231,18 +263,35 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 
 		// Update Prometheus metrics
-		instanceStatus.WithLabelValues(newState, ec2Instance.Namespace, ec2Instance.Spec.Region).Set(1)
-		// Update info metric
+		// instanceStatus doesn't need to be updated during drift check unless it's a total count change
+		// which is handled during creation/deletion.
+
+		// Update info metric (stable labels)
 		instanceInfo.WithLabelValues(
 			ec2Instance.Status.InstanceID,
 			ec2Instance.Name,
 			ec2Instance.Namespace,
 			ec2Instance.Spec.InstanceType,
 			ec2Instance.Spec.Region,
-			newState,
-			ec2Instance.Status.PublicIP,
-			ec2Instance.Status.PrivateIP,
 		).Set(1)
+
+		// Update mutable fields in separate metrics
+		instanceState.WithLabelValues(ec2Instance.Status.InstanceID).Set(stateCodes[newState])
+
+		// Update IPs with cleanup of old volatile labels
+		if ec2Instance.Status.PublicIP != "" && ec2Instance.Status.PublicIP != newIP {
+			instanceIPs.DeleteLabelValues(ec2Instance.Status.InstanceID, "public", ec2Instance.Status.PublicIP)
+		}
+		if newIP != "" {
+			instanceIPs.WithLabelValues(ec2Instance.Status.InstanceID, "public", newIP).Set(1)
+		}
+
+		if ec2Instance.Status.PrivateIP != "" && ec2Instance.Status.PrivateIP != newPrivIP {
+			instanceIPs.DeleteLabelValues(ec2Instance.Status.InstanceID, "private", ec2Instance.Status.PrivateIP)
+		}
+		if newPrivIP != "" {
+			instanceIPs.WithLabelValues(ec2Instance.Status.InstanceID, "private", newPrivIP).Set(1)
+		}
 
 		// Periodic resync for drift detection
 		if newState != "terminated" {
@@ -280,7 +329,25 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		managedInstances.Inc()
 		instanceProvisionTime.Observe(time.Since(startTime).Seconds())
 	}
-	instanceStatus.WithLabelValues(createdInfo.State, ec2Instance.Namespace, ec2Instance.Spec.Region).Set(1)
+
+	// Update Prometheus metrics
+	instanceStatus.WithLabelValues(ec2Instance.Namespace, ec2Instance.Spec.Region).Inc()
+	instanceInfo.WithLabelValues(
+		createdInfo.InstanceID,
+		ec2Instance.Name,
+		ec2Instance.Namespace,
+		ec2Instance.Spec.InstanceType,
+		ec2Instance.Spec.Region,
+	).Set(1)
+
+	instanceState.WithLabelValues(createdInfo.InstanceID).Set(stateCodes[createdInfo.State])
+	if createdInfo.PublicIP != "" {
+		instanceIPs.WithLabelValues(createdInfo.InstanceID, "public", createdInfo.PublicIP).Set(1)
+	}
+	if createdInfo.PrivateIP != "" {
+		instanceIPs.WithLabelValues(createdInfo.InstanceID, "private", createdInfo.PrivateIP).Set(1)
+	}
+
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 

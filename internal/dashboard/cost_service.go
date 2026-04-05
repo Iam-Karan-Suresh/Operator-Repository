@@ -225,7 +225,12 @@ func (s *CostService) syncData(ctx context.Context) {
 		if err != nil {
 			l.Error(err, "Failed to fetch OpenCost data, using fallback/empty")
 		} else {
-			defer resp.Body.Close()
+			defer func() {
+				if cerr := resp.Body.Close(); cerr != nil {
+					l.Error(cerr, "failed to close OpenCost response body")
+				}
+			}()
+
 			if resp.StatusCode == http.StatusOK {
 				var result struct {
 					Code int `json:"code"`
