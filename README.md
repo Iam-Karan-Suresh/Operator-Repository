@@ -139,6 +139,19 @@ spec:
 
 ---
 
+### 🚀 Local Development (Minikube)
+For a full local environment with 6 CPUs and 6GB RAM, use the automated deployment script:
+```bash
+./scripts/deploy-minikube.sh
+```
+This script will:
+- Provision a Minikube cluster with optimized resources.
+- Build local Docker images for the Operator & Dashboard.
+- Deploy the local Helm chart with `imagePullPolicy: Never`.
+- Provide URLs for all observability tools (Grafana, Jaeger, etc.).
+
+---
+
 ## 📖 Deep Dives
 For more internal details, refer to:
 - [Operator Architecture & Flow](docs/OPERATOR.md)
