@@ -18,10 +18,11 @@ import (
 
 // createEc2Instance is responsible for translating the Kubernetes Ec2Instance desired state into actual AWS resources.
 // It maps our Custom Resource (CR) fields (like InstanceType, AMI ID, Tags, Storage) to the AWS RunInstances API payload.
-// It also sets up tracing and blocks until the newly created instance reaches the "running" state in AWS.
+// It also sets up tracing and initiates the instance creation, returning immediately with initial metadata.
+// The instance will be in "pending" state; the controller reconciliation loop handles subsequent state updates.
 //
 // Returns:
-// - CreatedInstanceInfo: A struct containing instance metadata (ID, IPs) useful for updating the K8s object status.
+// - CreatedInstanceInfo: A struct containing initial instance metadata (ID, state). Note: IPs and DNS names may be empty until the instance reaches "running" state.
 // - err: Any error encountered during the AWS provisioning process.
 func createEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) (createdInstanceInfo *computev1.CreatedInstanceInfo, err error) {
 	log := logf.FromContext(ctx).WithName("createEc2Instance")

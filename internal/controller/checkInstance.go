@@ -50,7 +50,7 @@ func checkEC2InstanceExists(ctx context.Context, instanceID string, ec2Instance 
 		}
 		return false, nil, err
 	}
-	
+
 	log.Info("Fetched reservations",
 		"instanceID", instanceID,
 		"reservationCount", len(result.Reservations),

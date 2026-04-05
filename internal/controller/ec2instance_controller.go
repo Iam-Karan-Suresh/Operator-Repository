@@ -225,9 +225,11 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			ec2Instance.Status.State = StateTerminated
 			ec2Instance.Status.PublicIP = ""
 			ec2Instance.Status.PublicDNS = ""
-			managedInstances.Dec()
-			instanceStatus.WithLabelValues(ec2Instance.Namespace, ec2Instance.Spec.Region).Dec()
-
+			// Only decrement if transitioning from a non-terminated state
+			if ec2Instance.Status.State != StateTerminated {
+				managedInstances.Dec()
+				instanceStatus.WithLabelValues(ec2Instance.Namespace, ec2Instance.Spec.Region).Dec()
+			}
 			if err := r.Status().Update(ctx, ec2Instance); err != nil {
 				return ctrl.Result{}, err
 			}

@@ -44,7 +44,7 @@ type CostService struct {
 	cache       sync.Map
 	syncPeriod  time.Duration
 }
-  
+
 var (
 	instanceHourlyCost = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
