@@ -35,12 +35,15 @@ rules:
   - update
 - apiGroups:
   - ""
-  - ""
   resources:
   - events
   - configmaps
+  - nodes
+  - pods
+  - pods/log
   verbs:
   - create
+  - delete
   - get
   - list
   - patch

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ec2-operator-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  operator-dashboard.json: |-
+{{ .Files.Get "operator-dashboard.json" | nindent 4 }}

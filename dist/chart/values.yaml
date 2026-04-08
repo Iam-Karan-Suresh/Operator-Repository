@@ -125,12 +125,12 @@ grafana:
       datasources:
       - name: Prometheus
         type: prometheus
-        url: http://prometheus-server
+        url: http://ec2-operator-prometheus-server
         access: proxy
         isDefault: true
       - name: Jaeger
         type: jaeger
-        url: http://jaeger-query:16686
+        url: http://ec2-operator-jaeger-query:16686
         access: proxy
 
 jaeger:
@@ -160,7 +160,7 @@ opencost:
       internal:
         enabled: false
       external:
-        url: http://prometheus-server
+        url: http://ec2-operator-prometheus-server
 
 # [PERSONALIZATION]: UI Settings
 uiSettings:

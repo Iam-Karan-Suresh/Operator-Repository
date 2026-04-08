@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"time"
 
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -19,10 +18,11 @@ import (
 
 // createEc2Instance is responsible for translating the Kubernetes Ec2Instance desired state into actual AWS resources.
 // It maps our Custom Resource (CR) fields (like InstanceType, AMI ID, Tags, Storage) to the AWS RunInstances API payload.
-// It also sets up tracing and blocks until the newly created instance reaches the "running" state in AWS.
+// It also sets up tracing and initiates the instance creation, returning immediately with initial metadata.
+// The instance will be in "pending" state; the controller reconciliation loop handles subsequent state updates.
 //
 // Returns:
-// - CreatedInstanceInfo: A struct containing instance metadata (ID, IPs) useful for updating the K8s object status.
+// - CreatedInstanceInfo: A struct containing initial instance metadata (ID, state). Note: IPs and DNS names may be empty until the instance reaches "running" state.
 // - err: Any error encountered during the AWS provisioning process.
 func createEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) (createdInstanceInfo *computev1.CreatedInstanceInfo, err error) {
 	log := logf.FromContext(ctx).WithName("createEc2Instance")
@@ -155,49 +155,19 @@ func createEc2Instance(ctx context.Context, ec2Instance *computev1.Ec2Instance) 
 
 	inst := result.Instances[0]
 	log.Info(" === EC2 INSTANCE CREATED SUCCESSFULLY === ", "instanceID", *inst.InstanceId)
-	log.Info(" === WAITING FOR INSTANCE TO BE IN RUNNING STATE === ")
 
-	// Use AWS SDK wait routines to poll the instance state until it reports as "running".
-	// This ensures our operator status doesn't flap and reports actual usable infrastructure.
-	runWaiter := ec2.NewInstanceRunningWaiter(ec2Client)
-	maxWaitTime := 3 * time.Minute
-
-	waitCtx, waitCancel := context.WithTimeout(ctx, maxWaitTime)
-	defer waitCancel()
-
-	err = runWaiter.Wait(waitCtx, &ec2.DescribeInstancesInput{
-		InstanceIds: []string{*inst.InstanceId},
-	}, maxWaitTime)
-	if err != nil {
-		log.Error(err, "failed to wait for instance to be in running state")
-		return nil, fmt.Errorf("failed to wait for instance to be in running state: %w", err)
-	}
-
-	log.Info(" === CALLING AWS DescribeInstances API TO GET INSTANCE DETAILS ===")
-	describeInput := &ec2.DescribeInstancesInput{
-		InstanceIds: []string{*inst.InstanceId},
-	}
-
-	describeResult, err := ec2Client.DescribeInstances(ctx, describeInput)
-	if err != nil {
-		log.Error(err, "Failed to describe the EC2 instance")
-		return nil, fmt.Errorf("failed to describe EC2 instance: %w", err)
-	}
-
-	instance := describeResult.Reservations[0].Instances[0]
 	createdInstanceInfo = &computev1.CreatedInstanceInfo{
 		InstanceID: *inst.InstanceId,
-		PublicIP:   derefString(instance.PublicIpAddress),
-		State:      string(instance.State.Name),
-		PrivateIP:  derefString(instance.PrivateIpAddress),
-		PublicDNS:  derefString(instance.PublicDnsName),
-		PrivateDNS: derefString(instance.PrivateDnsName),
+		State:      string(inst.State.Name),
+		PublicIP:   derefString(inst.PublicIpAddress),
+		PrivateIP:  derefString(inst.PrivateIpAddress),
+		PublicDNS:  derefString(inst.PublicDnsName),
+		PrivateDNS: derefString(inst.PrivateDnsName),
 	}
 
-	log.Info("=== EC2 INSTANCE CREATION COMPLETED ===",
+	log.Info("=== EC2 INSTANCE CREATION INITIATED ===",
 		"instanceID", createdInstanceInfo.InstanceID,
 		"state", createdInstanceInfo.State,
-		"publicIP", createdInstanceInfo.PublicIP,
 	)
 
 	return createdInstanceInfo, nil

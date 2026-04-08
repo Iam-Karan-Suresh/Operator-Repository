@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -61,11 +62,54 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 	)
+	instanceStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_managed_instances_total_by_location",
+			Help: "Total number of managed EC2 instances by namespace and region",
+		},
+		[]string{"namespace", "region"},
+	)
+	instanceInfo = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_instance_info",
+			Help: "Metadata about managed EC2 instances",
+		},
+		[]string{"instance_id", "instance_name", "namespace", "instance_type", "region"},
+	)
+	instanceState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_instance_state",
+			Help: "Current state of the EC2 instance (0:pending, 1:running, 2:shutting-down, 3:terminated, 4:stopping, 5:stopped)",
+		},
+		[]string{"instance_id"},
+	)
+	instanceIPs = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "ec2_operator_instance_ips",
+			Help: "IP addresses of the EC2 instance",
+		},
+		[]string{"instance_id", "type", "ip_address"},
+	)
+	instanceProvisionTime = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "ec2_operator_instance_provision_duration_seconds",
+			Help:    "Time taken to provision an EC2 instance",
+			Buckets: []float64{30, 60, 120, 180, 240, 300, 600},
+		},
+	)
+	stateCodes = map[string]float64{
+		"pending":       0,
+		"running":       1,
+		"shutting-down": 2,
+		"terminated":    3,
+		"stopping":      4,
+		"stopped":       5,
+	}
 )
 
 func init() {
 	// Register custom metrics with the global prometheus registry
-	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal, ApiLatency)
+	metrics.Registry.MustRegister(managedInstances, ReconciliationTotal, ApiLatency, instanceStatus, instanceInfo, instanceProvisionTime, instanceState, instanceIPs)
 }
 
 // Ec2InstanceReconciler reconciles an Ec2Instance object.
@@ -127,6 +171,9 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return ctrl.Result{Requeue: true}, err
 		}
 
+		// Cleanup Prometheus series for instanceInfo, instanceState, and instanceIPs prior to removing the finalizer
+		r.cleanupInstanceMetrics(ec2Instance)
+
 		controllerutil.RemoveFinalizer(ec2Instance, "ec2instance.compute.cloud.com")
 		if err := r.Update(ctx, ec2Instance); err != nil {
 			log.Error(err, "Failed to remove finalizer")
@@ -165,10 +212,24 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 		if !exists {
 			log.Info("Instance missing in AWS, marking as terminated", "instanceID", ec2Instance.Status.InstanceID)
+
+			// Cleanup old state and IPs
+			instanceState.WithLabelValues(ec2Instance.Status.InstanceID).Set(stateCodes[StateTerminated])
+			if ec2Instance.Status.PublicIP != "" {
+				instanceIPs.DeleteLabelValues(ec2Instance.Status.InstanceID, "public", ec2Instance.Status.PublicIP)
+			}
+			if ec2Instance.Status.PrivateIP != "" {
+				instanceIPs.DeleteLabelValues(ec2Instance.Status.InstanceID, "private", ec2Instance.Status.PrivateIP)
+			}
+
 			ec2Instance.Status.State = StateTerminated
 			ec2Instance.Status.PublicIP = ""
 			ec2Instance.Status.PublicDNS = ""
-			managedInstances.Dec()
+			// Only decrement if transitioning from a non-terminated state
+			if ec2Instance.Status.State != StateTerminated {
+				managedInstances.Dec()
+				instanceStatus.WithLabelValues(ec2Instance.Namespace, ec2Instance.Spec.Region).Dec()
+			}
 			if err := r.Status().Update(ctx, ec2Instance); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -200,6 +261,12 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			// Update metrics if state changed to/from running
 			if ec2Instance.Status.State != StateRunning && newState == StateRunning {
 				managedInstances.Inc()
+
+				// If we have a provisioning start time, observe the duration
+				if ec2Instance.Status.ProvisioningStartTime != nil {
+					instanceProvisionTime.Observe(time.Since(ec2Instance.Status.ProvisioningStartTime.Time).Seconds())
+					ec2Instance.Status.ProvisioningStartTime = nil
+				}
 			} else if ec2Instance.Status.State == StateRunning && newState != StateRunning {
 				managedInstances.Dec()
 			}
@@ -226,6 +293,37 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			r.Recorder.Event(ec2Instance, corev1.EventTypeNormal, "Terminated", "EC2 Instance has been terminated")
 		}
 
+		// Update Prometheus metrics
+		// instanceStatus doesn't need to be updated during drift check unless it's a total count change
+		// which is handled during creation/deletion.
+
+		// Update info metric (stable labels)
+		instanceInfo.WithLabelValues(
+			ec2Instance.Status.InstanceID,
+			ec2Instance.Name,
+			ec2Instance.Namespace,
+			ec2Instance.Spec.InstanceType,
+			ec2Instance.Spec.Region,
+		).Set(1)
+
+		// Update mutable fields in separate metrics
+		instanceState.WithLabelValues(ec2Instance.Status.InstanceID).Set(stateCodes[newState])
+
+		// Update IPs with cleanup of old volatile labels
+		if ec2Instance.Status.PublicIP != "" && ec2Instance.Status.PublicIP != newIP {
+			instanceIPs.DeleteLabelValues(ec2Instance.Status.InstanceID, "public", ec2Instance.Status.PublicIP)
+		}
+		if newIP != "" {
+			instanceIPs.WithLabelValues(ec2Instance.Status.InstanceID, "public", newIP).Set(1)
+		}
+
+		if ec2Instance.Status.PrivateIP != "" && ec2Instance.Status.PrivateIP != newPrivIP {
+			instanceIPs.DeleteLabelValues(ec2Instance.Status.InstanceID, "private", ec2Instance.Status.PrivateIP)
+		}
+		if newPrivIP != "" {
+			instanceIPs.WithLabelValues(ec2Instance.Status.InstanceID, "private", newPrivIP).Set(1)
+		}
+
 		// Periodic resync for drift detection
 		if newState != "terminated" {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -239,6 +337,9 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// If we reach here, we know the instance does not exist in AWS yet.
 	log.Info("Creating new EC2 Instance in AWS", "name", ec2Instance.Name)
 	startTime := time.Now()
+	// Persist the provisioning start time
+	ec2Instance.Status.ProvisioningStartTime = &metav1.Time{Time: startTime}
+
 	createdInfo, err := createEc2Instance(ctx, ec2Instance)
 	ApiLatency.Observe(time.Since(startTime).Seconds())
 	if err != nil {
@@ -260,10 +361,39 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	log.Info("Successfully created instance and updated status", "instanceID", createdInfo.InstanceID)
-	// If it's already running (unlikely immediately, but for consistency)
-	if createdInfo.State == "running" {
+	// If it's already running (observed immediately after RunInstances)
+	if createdInfo.State == StateRunning {
 		managedInstances.Inc()
+		if ec2Instance.Status.ProvisioningStartTime != nil {
+			instanceProvisionTime.Observe(time.Since(ec2Instance.Status.ProvisioningStartTime.Time).Seconds())
+			ec2Instance.Status.ProvisioningStartTime = nil
+
+			// Update status again to clear the provisioning start time if it was set
+			if err := r.Status().Update(ctx, ec2Instance); err != nil {
+				log.Error(err, "Failed to clear provisioning start time")
+				return ctrl.Result{}, err
+			}
+		}
 	}
+
+	// Update Prometheus metrics
+	instanceStatus.WithLabelValues(ec2Instance.Namespace, ec2Instance.Spec.Region).Inc()
+	instanceInfo.WithLabelValues(
+		createdInfo.InstanceID,
+		ec2Instance.Name,
+		ec2Instance.Namespace,
+		ec2Instance.Spec.InstanceType,
+		ec2Instance.Spec.Region,
+	).Set(1)
+
+	instanceState.WithLabelValues(createdInfo.InstanceID).Set(stateCodes[createdInfo.State])
+	if createdInfo.PublicIP != "" {
+		instanceIPs.WithLabelValues(createdInfo.InstanceID, "public", createdInfo.PublicIP).Set(1)
+	}
+	if createdInfo.PrivateIP != "" {
+		instanceIPs.WithLabelValues(createdInfo.InstanceID, "private", createdInfo.PrivateIP).Set(1)
+	}
+
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
@@ -273,4 +403,34 @@ func (r *Ec2InstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&computev1.Ec2Instance{}).
 		Named("ec2instance").
 		Complete(r)
+}
+
+// cleanupInstanceMetrics removes all series related to a specific instance to prevent stale metrics.
+// Since DeletePartialMatch is only available in K8s component-base metrics, we use standard DeleteLabelValues
+// with all available labels from the CR and status for standard Prometheus metrics compatibility.
+func (r *Ec2InstanceReconciler) cleanupInstanceMetrics(ec2Instance *computev1.Ec2Instance) {
+	if ec2Instance.Status.InstanceID == "" {
+		return
+	}
+	instanceID := ec2Instance.Status.InstanceID
+
+	// instanceInfo uses multiple labels (id, name, namespace, type, region)
+	instanceInfo.DeleteLabelValues(
+		instanceID,
+		ec2Instance.Name,
+		ec2Instance.Namespace,
+		ec2Instance.Spec.InstanceType,
+		ec2Instance.Spec.Region,
+	)
+
+	// instanceState only uses instance_id
+	instanceState.DeleteLabelValues(instanceID)
+
+	// instanceIPs uses variable IP labels, we clean up what was registered in status
+	if ec2Instance.Status.PublicIP != "" {
+		instanceIPs.DeleteLabelValues(instanceID, "public", ec2Instance.Status.PublicIP)
+	}
+	if ec2Instance.Status.PrivateIP != "" {
+		instanceIPs.DeleteLabelValues(instanceID, "private", ec2Instance.Status.PrivateIP)
+	}
 }

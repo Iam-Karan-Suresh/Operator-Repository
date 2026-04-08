@@ -133,6 +133,9 @@ spec:
                 type: string
               privateIP:
                 type: string
+              provisioningStartTime:
+                format: date-time
+                type: string
               publicDNS:
                 type: string
               publicIP:

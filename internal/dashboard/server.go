@@ -1,4 +1,4 @@
-// Package dashboard implements the web interface and background cost synchronization 
+// Package dashboard implements the web interface and background cost synchronization
 // services for the EC2 Operator. It serves the frontend UI and provides APIs for it.
 package dashboard
 

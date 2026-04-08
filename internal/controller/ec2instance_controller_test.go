@@ -31,8 +31,8 @@ import (
 )
 
 // The Ec2Instance Controller test uses Ginkgo (BDD) and Gomega (Matchers).
-// These tests run against 'envtest', which starts a real Kubernetes API Server and Etcd 
-// locally, but DOES NOT start a real AWS client. AWS calls should usually be mocked 
+// These tests run against 'envtest', which starts a real Kubernetes API Server and Etcd
+// locally, but DOES NOT start a real AWS client. AWS calls should usually be mocked
 // or verified in higher-level E2E tests.
 var _ = Describe("Ec2Instance Controller", func() {
 	Context("When reconciling a resource", func() {

@@ -19,10 +19,10 @@ datasources:
     datasources:
     - name: Prometheus
       type: prometheus
-      url: http://prometheus-server.observability.svc.cluster.local
+      url: http://ec2-operator-prometheus-server.operator-system.svc.cluster.local
       access: proxy
       isDefault: true
     - name: Jaeger
       type: jaeger
-      url: http://jaeger-query.observability.svc.cluster.local:16686
+      url: http://ec2-operator-jaeger-query.operator-system.svc.cluster.local:16686
       access: proxy
