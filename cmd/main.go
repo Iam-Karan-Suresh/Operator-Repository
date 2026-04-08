@@ -24,6 +24,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -43,8 +44,10 @@ import (
 
 	operatorrepo "github.com/Iam-Karan-Suresh/operator-repo"
 	computev1 "github.com/Iam-Karan-Suresh/operator-repo/api/v1"
+	"github.com/Iam-Karan-Suresh/operator-repo/internal/cache"
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/controller"
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/dashboard"
+	"github.com/Iam-Karan-Suresh/operator-repo/internal/events"
 	"github.com/Iam-Karan-Suresh/operator-repo/internal/telemetry"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -80,6 +83,9 @@ func main() {
 	var dashboardPort string
 	var tlsOpts []func(*tls.Config)
 	var otlpEndpoint string
+	var redisAddr string
+	var redisPassword string
+	var kafkaBrokers string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -98,6 +104,9 @@ func main() {
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.StringVar(&otlpEndpoint, "otlp-endpoint", "localhost:4317", "The OTLP collector endpoint for traces.")
+	flag.StringVar(&redisAddr, "redis-addr", "", "Redis server address (e.g., localhost:6379). Empty disables caching.")
+	flag.StringVar(&redisPassword, "redis-password", "", "Redis server password. Empty for no auth.")
+	flag.StringVar(&kafkaBrokers, "kafka-brokers", "", "Comma-separated Kafka broker addresses. Empty disables event bus.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	opts := zap.Options{
@@ -107,6 +116,42 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// Allow env vars to override flags for Redis and Kafka (useful in K8s deployments)
+	if envAddr := os.Getenv("REDIS_ADDR"); envAddr != "" {
+		redisAddr = envAddr
+	}
+	if envPass := os.Getenv("REDIS_PASSWORD"); envPass != "" {
+		redisPassword = envPass
+	}
+	if envBrokers := os.Getenv("KAFKA_BROKERS"); envBrokers != "" {
+		kafkaBrokers = envBrokers
+	}
+
+	// Initialize Redis Cache
+	redisClient := cache.NewRedisClient(redisAddr, redisPassword, 0)
+	if err := redisClient.Connect(context.Background()); err != nil {
+		setupLog.Error(err, "Failed to connect to Redis. Running in degraded (uncached) mode.")
+	} else if redisClient.IsAvailable() {
+		setupLog.Info("Connected to Redis cache successfully")
+	}
+	defer redisClient.Close()
+
+	instanceCache := cache.NewInstanceCache(redisClient)
+
+	// Initialize Kafka Producer (for Reconciler)
+	var brokersList []string
+	if kafkaBrokers != "" {
+		brokersList = strings.Split(kafkaBrokers, ",")
+	}
+	kafkaProducer := events.NewProducer(brokersList)
+	defer kafkaProducer.Close()
+
+	// Initialize Kafka Consumer (for Dashboard)
+	kafkaConsumer := events.NewConsumer(brokersList, "dashboard-group")
+	defer kafkaConsumer.Close()
+
+	// ... OpenTelemetry setup remains below
 
 	// Initialize OpenTelemetry (OTEL) for distributed tracing.
 	// If an OTLP endpoint is provided, we send trace data (spans) to that collector.
@@ -154,7 +199,7 @@ func main() {
 	if len(webhookCertPath) > 0 {
 		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
 			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
-		
+
 		var err error
 		webhookCertWatcher, err = certwatcher.New(webhookCertPath+"/"+webhookCertName, webhookCertPath+"/"+webhookCertKey)
 		if err != nil {
@@ -249,6 +294,8 @@ func main() {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("ec2instance-controller"), // Record K8s Events
+		Cache:    instanceCache,
+		Events:   kafkaProducer,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Ec2Instance")
 		os.Exit(1)
@@ -274,7 +321,7 @@ func main() {
 	// If enabled, start the integrated web dashboard.
 	if enableDashboard {
 		setupLog.Info("starting dashboard server", "port", dashboardPort)
-		
+
 		// Retrieve the statically embedded React frontend files.
 		staticFS, err := operatorrepo.GetStaticFS()
 		if err != nil {
@@ -291,6 +338,15 @@ func main() {
 
 		// Initialize and add the Dashboard server as a "Runnable" to the Manager.
 		dashServer := dashboard.NewServer(mgr.GetClient(), clientset, dashboardPort)
+		dashServer.SetCache(instanceCache)
+		dashServer.SetEventConsumer(kafkaConsumer)
+
+		// Start Kafka Consumer asynchronously
+		go func() {
+			if err := kafkaConsumer.Start(context.Background()); err != nil {
+				setupLog.Error(err, "Kafka consumer failed")
+			}
+		}()
 		dashServer.SetStaticFS(staticFS)
 
 		if err := mgr.Add(dashServer); err != nil {

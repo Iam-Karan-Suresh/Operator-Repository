@@ -15,21 +15,36 @@ graph TD
         G["Grafana"] --- F
         H["Jaeger"] --- C
         C --- I["OpenCost"]
+        
+        subgraph "Performance & Persistence"
+            R[("Redis Cache")] --- C
+            K[("Kafka Bus")] --- C
+            R --- D
+            K --- D
+        end
     end
     
     subgraph "AWS Cloud"
         C --- J["EC2 Service"]
-        C --- K["STS / IAM"]
+        C --- L["STS / IAM"]
     end
 
-    D -- "SSE Stream" --> E
+    D -- "SSE Stream (Kafka-Driven)" --> E
 ```
+
+## Performance Architecture
+To support high-scale operations (1,000+ instances), the operator incorporates a specialized performance layer:
+- **Redis Cache**: Caches AWS instance state and dashboard statistics. Reduces AWS API calls during reconciliation and metadata lookups.
+- **Kafka Event Bus**: Decouples the reconciliation loop from the dashboard API. Enables a real-time, event-driven update model for the UI via SSE.
+- **AWS Client Pooling**: Reuses EC2 service clients per region to eliminate redundant SDK initialization overhead.
+
+For more details, see [Performance Optimization Guide](PERFORMANCE_OPTIMIZATION.md).
 
 ## Data Flow
 1. **Creation**: User applies `Ec2Instance` CRD ➔ K8s API Server ➔ Operator Reconciler ➔ AWS SDK `RunInstances`.
-2. **Reconciliation**: Operator polls AWS EC2 API every 30s ➔ Detects drift (e.g., manual stop) ➔ Updates K8s Status.
-3. **Visualization**: Dashboard Backend watches K8s API ➔ Streams change events via SSE ➔ Frontend reactively updates `InstanceCard`.
-4. **Observability**: Operator exports Prometheus metrics ➔ Grafana visualizes ➔ Jaeger tracks AWS call latency.
+2. **Reconciliation**: Operator checks **Redis Cache** first ➔ Falls back to AWS EC2 API every 30s ➔ Detects drift ➔ Updates K8s Status ➔ Publishes change to **Kafka**.
+3. **Visualization**: Dashboard Backend consumes **Kafka events** ➔ Streams change events via SSE ➔ Frontend reactively updates `InstanceCard`.
+4. **Observability**: Operator exports Prometheus metrics ➔ Grafana visualizes (including cache hit/miss rates) ➔ Jaeger tracks AWS call latency.
 
 ## Key Design Decisions
 - **Embedded Dashboard**: Zero-dependency deployment by embedding the React SPA into the Go binary.

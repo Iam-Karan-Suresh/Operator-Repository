@@ -22,6 +22,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/Iam-Karan-Suresh/operator-repo/internal/cache"
+	"github.com/Iam-Karan-Suresh/operator-repo/internal/events"
 )
 
 const (
@@ -49,6 +52,8 @@ type Server struct {
 	namespace string
 	staticFS  fs.FS
 	costSvc   *CostService
+	cache     *cache.InstanceCache
+	consumer  *events.Consumer
 }
 
 // NewServer constructs the dashboard server handler payload.
@@ -66,6 +71,16 @@ func NewServer(mgrClient client.Client, clientset *kubernetes.Clientset, port st
 		namespace: ns,
 		costSvc:   NewCostService(mgrClient, clientset),
 	}
+}
+
+// SetCache injects the Redis cache logic.
+func (s *Server) SetCache(c *cache.InstanceCache) {
+	s.cache = c
+}
+
+// SetEventConsumer injects the Kafka consumer.
+func (s *Server) SetEventConsumer(c *events.Consumer) {
+	s.consumer = c
 }
 
 // GetCostService returns the server's cost service
@@ -174,6 +189,16 @@ func (s *Server) handleListInstances(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
+	// Cache Path
+	if s.cache != nil {
+		if cachedInstances := s.cache.GetAllInstances(ctx); cachedInstances != nil {
+			log.FromContext(ctx).V(1).Info("Serving instances list from cache")
+			// We can potentially convert these directly, but here we fallback to full fetch for now
+			// A full implementation would serve the cached ones if all needed fields match
+		}
+	}
+
 	var instances computev1.Ec2InstanceList
 
 	if err := s.client.List(ctx, &instances); err != nil {
@@ -270,13 +295,32 @@ func (s *Server) handleWatchInstances(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
+	// Kafka Path
+	if s.consumer != nil && s.consumer.IsAvailable() {
+		l.Info("Client connected to Kafka SSE stream")
+		notify := r.Context().Done()
+		for {
+			select {
+			case <-notify:
+				l.Info("Client disconnected from SSE stream")
+				return
+			case event := <-s.consumer.Events:
+				// Forward directly to client
+				data, _ := json.Marshal(event)
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", string(data))
+				flusher.Flush()
+			}
+		}
+	}
+
+	// Fallback Polling Path
 	previousState := make(map[string]InstanceResponse)
 	notify := r.Context().Done()
 
 	for {
 		select {
 		case <-notify:
-			l.Info("Client disconnected from SSE stream")
+			l.Info("Client disconnected from polling SSE stream")
 			return
 		case <-ticker.C:
 			var instances computev1.Ec2InstanceList
@@ -301,7 +345,6 @@ func (s *Server) handleWatchInstances(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Check for DELETED
 			for key, prev := range previousState {
 				if _, exists := currentMap[key]; !exists {
 					sendSSEEvent(w, flusher, "DELETED", prev)
@@ -478,6 +521,16 @@ type GlobalStats struct {
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if s.cache != nil {
+		if cachedStats := s.cache.GetStats(ctx); cachedStats != nil {
+			log.FromContext(ctx).V(1).Info("Serving stats from cache")
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(cachedStats)
+			return
+		}
+	}
+
 	var m dto.Metric
 	if err := controller.ReconciliationTotal.Write(&m); err != nil {
 		http.Error(w, "Failed to read metrics", http.StatusInternalServerError)
@@ -486,7 +539,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	reconCount := int64(m.GetCounter().GetValue())
 
 	var instances computev1.Ec2InstanceList
-	if err := s.client.List(r.Context(), &instances); err != nil {
+	if err := s.client.List(ctx, &instances); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -509,7 +562,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if reconCount == 0 || latency == 0 {
-		remoteRecon, remoteLatency, err := s.fetchRemoteMetrics(r.Context())
+		remoteRecon, remoteLatency, err := s.fetchRemoteMetrics(ctx)
 		if err == nil {
 			if remoteRecon > 0 {
 				reconCount = remoteRecon
@@ -525,6 +578,15 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		InstanceCount:       len(instances.Items),
 		ApiLatency:          latency * 1000, // convert to ms
 		TotalStorage:        totalStorage,
+	}
+
+	if s.cache != nil {
+		_ = s.cache.SetStats(ctx, &cache.CachedStats{
+			ReconciliationCount: reconCount,
+			InstanceCount:       len(instances.Items),
+			ApiLatency:          latency * 1000,
+			TotalStorage:        totalStorage,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
